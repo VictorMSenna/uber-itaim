@@ -337,9 +337,11 @@ export function criarCena({ container, predio, unidades, teste = false,
   matUnidNoite.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFachada;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        float sxN = length(instanceMatrix[0].xyz), szN = length(instanceMatrix[2].xyz);
+        vec3 cN = instanceMatrix[3].xyz;
+        float axN = abs(cN.x - ${((BX0 + BX1) / 2).toFixed(3)}) / ${((BX1 - BX0) / 2).toFixed(3)};
+        float azN = abs(cN.z - ${((BZ0 + BZ1) / 2).toFixed(3)}) / ${((BZ1 - BZ0) / 2).toFixed(3)};
         vec3 anN = abs(normal);
-        vFachada = sxN < szN ? step(0.5, anN.x) : step(0.5, anN.z);`);
+        vFachada = axN > azN ? step(0.5, anN.x) : step(0.5, anN.z);`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vFachada;')
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (vFachada < 0.5) discard;');
   };
