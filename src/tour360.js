@@ -58,12 +58,12 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   }
   const cv = raiz.querySelector('.t360-cv');
   const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: teste });
-  renderer.setPixelRatio(Math.min(matchMedia('(pointer: coarse)').matches || innerWidth < 900 ? 1 : 1.5, window.devicePixelRatio || 1)); // (B1) phones 1.0
+  renderer.setPixelRatio(Math.min(matchMedia('(pointer: coarse)').matches || innerWidth < 900 ? 2.5 : 2, window.devicePixelRatio || 1)); // orq 07/10 08:4x: phones at real screen density (1.0 made a 390-px image stretched ~3x = blurry on Victor's phone); one sphere is cheap
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
   // phones: 2048 px panoramas (GPU memory: 7 layers x 2 points); desktop: full 4096 when the GPU allows it
   const movel = /Android|iPhone|iPad/i.test(navigator.userAgent);
-  const larguraMax = movel && renderer.capabilities.maxTextureSize < 4096 ? 2048 : movel ? 2048 : Math.min(4096, renderer.capabilities.maxTextureSize); // phones 2048 (3072 crashed the test browser 07/10 08:0x)
+  const larguraMax = Math.min(movel ? 3072 : 4096, renderer.capabilities.maxTextureSize); // phones full 3072 (07/10 08:3x: 2048 + narrow portrait view looked blurry on Victor's phone; the 08:0x 'crash' was the degraded test browser)
 
   const cena = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 100);
