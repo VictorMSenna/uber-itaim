@@ -262,7 +262,7 @@ function abrirUnidade(id) {
   Promise.all([manifestoTour360().catch(() => null), import('./splat-interior.js').then((m) => m.splatDisponivel()).catch(() => null)]).then(([t360, spl]) => {
     const b = $('#btn-splat'); if (!b || app.unidade !== id || !(t360 || spl)) return;
     b.hidden = false;
-    if (t360) { b.firstChild.textContent = 'Entrar no apartamento'; const sm = b.querySelector('.btn-sub'); if (sm) sm.textContent = 'imagem 3D do studio, feita a partir do vídeo de 2026'; }
+    if (t360) { b.firstChild.textContent = 'Entrar no apartamento'; const sm = b.querySelector('.btn-sub'); if (sm) sm.remove(); }
   });
   // prefetch the interior module while the client reads the card, so "Entrar no apartamento" opens fast
   if (!interiorMod && b7Ativo('interiorProcedural')) setTimeout(() => { carregarInterior().catch(() => {}); }, 1200);
