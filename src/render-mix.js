@@ -38,6 +38,7 @@ uniform float esc[7];
 uniform float gama;
 uniform vec3 wb;
 uniform float expo;
+uniform float srgb;
 vec3 neutral(vec3 c){
   const float start = 0.76; const float desat = 0.15;
   float x = min(c.r, min(c.g, c.b));
@@ -57,17 +58,37 @@ void main(){
   vec3 x = s * wb * expo;
   float l = dot(x, vec3(0.2126, 0.7152, 0.0722));
   x *= (1.0 + 1.0 / 2.5) / (1.0 + l / 2.5);   // soft highlight roll-off (same as scripts/mixer.py)
-  gl_FragColor = vec4(neutral(x), 1.0);
+  vec3 o = neutral(x);
+  // (B1) 8-bit target (no float RT on this GPU): store sRGB-encoded values so the darks do not band
+  if (srgb > 0.5) o = mix(o * 12.92, 1.055 * pow(max(o, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, o));
+  gl_FragColor = vec4(o, 1.0);
 }`;
 
+// (B1, Victor's Android 07/10: blocky + banded) decode at full size (createImageBitmap WITHOUT the resize options,
+// which some browsers ignore or do badly; fallback <img>.decode()); if the layer is wider than `max`, downscale on a
+// canvas with high-quality smoothing; mipmaps on (trilinear minification). INFO is shown by ?debug360=1.
+export const INFO = { tamanhos: new Set(), decodificador: null };
 async function carregaTextura(url, max) {
   const blob = await (await fetch(url)).blob();
-  const opt = { imageOrientation: 'flipY', colorSpaceConversion: 'none', premultiplyAlpha: 'none' };
-  // (B1) one off-thread decode, already at the target size (phones 2048): no full-size decode then a second one
-  const bmp = await createImageBitmap(blob, max ? { ...opt, resizeWidth: max, resizeHeight: max / 2, resizeQuality: 'medium' } : opt);
-  const tx = new THREE.Texture(bmp);
-  tx.flipY = false; tx.colorSpace = THREE.NoColorSpace; tx.generateMipmaps = false;
-  tx.minFilter = THREE.LinearFilter; tx.magFilter = THREE.LinearFilter; tx.needsUpdate = true;
+  let img = null, flipY = false;
+  try { img = await createImageBitmap(blob, { imageOrientation: 'flipY', colorSpaceConversion: 'none', premultiplyAlpha: 'none' }); INFO.decodificador = 'createImageBitmap'; }
+  catch (e) {
+    const el = new Image(); el.src = URL.createObjectURL(blob);
+    await el.decode(); img = el; flipY = true; INFO.decodificador = 'img.decode';
+  }
+  let fonte = img;
+  if (max && img.width > max) {
+    const c = document.createElement('canvas'); c.width = max; c.height = max / 2;
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    if (flipY) { g.translate(0, c.height); g.scale(1, -1); flipY = false; } // keep the same orientation as the bitmap path
+    g.drawImage(img, 0, 0, c.width, c.height);
+    if (img.close) img.close();
+    fonte = c;
+  }
+  INFO.tamanhos.add(`${fonte.width}x${fonte.height}`);
+  const tx = new THREE.Texture(fonte);
+  tx.flipY = flipY; tx.colorSpace = THREE.NoColorSpace; tx.generateMipmaps = true;
+  tx.minFilter = THREE.LinearMipmapLinearFilter; tx.magFilter = THREE.LinearFilter; tx.anisotropy = 4; tx.needsUpdate = true;
   return tx;
 }
 const PRETO = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1); PRETO.needsUpdate = true;
@@ -81,11 +102,13 @@ export class MisturaPonto {
     const gl = renderer.getContext();
     const half = renderer.capabilities.isWebGL2 && (gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
     this.rt = new THREE.WebGLRenderTarget(w, w / 2, { type: half ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: false, generateMipmaps: false });
-    this.rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
+    // (B1) with a float target keep linear; with an 8-bit target store sRGB (decoded by the sphere material)
+    this.rt.texture.colorSpace = half ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
+    INFO.rtFloat = !!half; INFO.webgl = renderer.capabilities.isWebGL2 ? 2 : 1; INFO.maxTex = renderer.capabilities.maxTextureSize;
     this.mat = new THREE.ShaderMaterial({
       vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false,
       uniforms: { t: { value: Array(7).fill(PRETO) }, g: { value: Array.from({ length: 7 }, () => new THREE.Vector3()) },
-        esc: { value: Array(7).fill(1) }, gama: { value: 2.2 }, wb: { value: new THREE.Vector3(1, 1, 1) }, expo: { value: 1 } },
+        esc: { value: Array(7).fill(1) }, gama: { value: 2.2 }, wb: { value: new THREE.Vector3(1, 1, 1) }, expo: { value: 1 }, srgb: { value: half ? 0 : 1 } },
     });
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mat);
     this.cena = new THREE.Scene(); this.cena.add(this.quad);
@@ -146,7 +169,15 @@ export class MisturaPonto {
     // otherwise saturated lamp shades turn blue after the balance
     const WB = noite ? 0.15 : 0.6;
     U.wb.value.set(...m.map((x) => (y > 0 ? (y / Math.max(x, 1e-9)) ** WB : 1)));
-    U.expo.value = y > 0 ? Math.min(ALVO / y, noite ? 40 : 8) : 1;
+    if (noite) { // (B1) warm but not orange: balanced R/B at most 1.25, green in between (never a green cast)
+      const w = U.wb.value, c = [m[0] * w.x, m[1] * w.y, m[2] * w.z];
+      const rb = c[0] / Math.max(c[2], 1e-9);
+      if (rb > 1.25) { const k = Math.sqrt(rb / 1.25); w.x /= k; w.z *= k; c[0] /= k; c[2] *= k; }
+      const alvoG = Math.sqrt(c[0] * c[2]); if (c[1] > 0) w.y *= alvoG / c[1];
+      const yy = 0.2126 * m[0] * w.x + 0.7152 * m[1] * w.y + 0.0722 * m[2] * w.z; // keep the luminance
+      if (yy > 0) { const n = y / yy; w.multiplyScalar(n); }
+    }
+    U.expo.value = y > 0 ? Math.min(ALVO / y, noite ? 4.5 : 8) : 1; // (B1) night auto-exposure gain capped at 2.5x
     this.r.setRenderTarget(this.rt); this.r.render(this.cena, this.cam); this.r.setRenderTarget(null);
     this.ultimo = { ...pl, expo: U.expo.value };
     return this.rt.texture;

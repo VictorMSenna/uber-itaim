@@ -440,7 +440,7 @@ async function carregarInterior() {
         tour360: true,
         // lamps on by default (same as the 3D interior), so night is never a black room
         abrirInterior: (o) => t.abrirTour360({ container: o.container, manifesto: man, estacao: o.estacao, minutos: o.minutos, aoFechar: o.aoFechar, teste: o.teste,
-          luzes: { teto: true, abajur: true, cortineiro: false, cozinha: false } }),
+          luzes: { teto: true, abajur: true, cortineiro: false, cozinha: false } }), // night default: spots + bedside lamps (WB neutralised in render-mix)
         definirHora: t.definirHora, definirEstacao: t.definirEstacao, fecharInterior: t.fecharTour360,
       };
       return interiorMod;

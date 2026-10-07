@@ -9,7 +9,7 @@
 //   X = -v, Y = h, Z = u  (pano centre = +v = -X, turning right = increasing pano u, like the Blender equirect camera).
 import * as THREE from 'three';
 import { SOL } from './dados-sol.js';
-import { MisturaPonto, ROTULO, LUZES } from './render-mix.js';
+import { MisturaPonto, ROTULO, LUZES, INFO } from './render-mix.js';
 
 let atual = null;
 export async function abrirTour360(opts) { if (atual) atual.fechar(false); atual = await criar(opts); return atual.api; }
@@ -63,7 +63,7 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   renderer.toneMapping = THREE.NoToneMapping;
   // phones: 2048 px panoramas (GPU memory: 7 layers x 2 points); desktop: full 4096 when the GPU allows it
   const movel = /Android|iPhone|iPad/i.test(navigator.userAgent);
-  const larguraMax = movel ? 2048 : Math.min(4096, renderer.capabilities.maxTextureSize); // phones 2048 (3072 crashed the test browser 07/10 08:0x)
+  const larguraMax = movel && renderer.capabilities.maxTextureSize < 4096 ? 2048 : movel ? 2048 : Math.min(4096, renderer.capabilities.maxTextureSize); // phones 2048 (3072 crashed the test browser 07/10 08:0x)
 
   const cena = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 100);
@@ -230,6 +230,16 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   aplicaCam(); redim(); marcaLuzes();
   await repinta(); montaHot(); desenha();
   raiz.dataset.ready = '1';
+  if (/[?&]debug360=1/.test(location.search)) { // (B1) device report for Victor's screenshot
+    const d = document.createElement('pre');
+    d.style.cssText = 'position:absolute;left:8px;top:240px;z-index:50;margin:0;padding:6px 8px;font:11px/1.35 monospace;background:rgba(0,0,0,.75);color:#fff;border-radius:6px;pointer-events:none;white-space:pre-wrap;max-width:80%';
+    const atualizaDbg = () => { d.textContent = `WebGL ${INFO.webgl} · RT float: ${INFO.rtFloat ? 'sim' : 'NAO (8 bits, sRGB)'}
+maxTextureSize ${INFO.maxTex} · larguraMax ${larguraMax}
+texturas enviadas: ${[...INFO.tamanhos].join(', ')}
+decodificador: ${INFO.decodificador} · dpr ${renderer.getPixelRatio()}
+${navigator.userAgent.slice(0, 120)}`; };
+    atualizaDbg(); setInterval(atualizaDbg, 2000); raiz.appendChild(d);
+  }
 
   const api = {
     definirHora: (m) => { estado.minutos = m; return repinta(); },
