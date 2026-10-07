@@ -1,0 +1,12 @@
+{
+ "versao": "b9-2026-10-07",
+ "topo_box": [
+  7.6699999999999875,
+  20.99000000000001,
+  422.99
+ ],
+ "rho": 1.6675977637013415,
+ "refP": 172.0,
+ "refT": 0.5972241759300232,
+ "nota": "sky light only (AO + bounce), Cycles 5.2.2 on RTX 4090; stored sqrt(lm/2); walls relative to each building mean, ground relative to open roofs (p99)"
+}

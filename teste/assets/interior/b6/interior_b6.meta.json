@@ -1,0 +1,102 @@
+{
+ "quadro": "mesmo de dados/b6-inventario.json (u_s, v, h em metros); glTF y-up: x = u_s, y = h, z = v",
+ "luz_do_bake": "ceu do dia (HDRI CC0) pela janela, luminarias APAGADAS; o site soma sol/luminarias por cima",
+ "triangulos_antes_depois_decimate": [
+  317461,
+  317461
+ ],
+ "atlas_px": 4096,
+ "amostras": 256,
+ "segundos_bake": 288.5,
+ "mb_glb": 2.37,
+ "luminarias": [
+  {
+   "nome": "luz_teto_spot_00",
+   "grupo": "teto",
+   "pos_uvh": [
+    1.464,
+    3.726,
+    2.473
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 16.0
+  },
+  {
+   "nome": "luz_teto_spot_02",
+   "grupo": "teto",
+   "pos_uvh": [
+    3.551,
+    3.823,
+    2.449
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 35.0
+  },
+  {
+   "nome": "luz_teto_spot_06",
+   "grupo": "teto",
+   "pos_uvh": [
+    2.587,
+    5.616,
+    2.443
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 35.0
+  },
+  {
+   "nome": "luz_teto_spot_07",
+   "grupo": "teto",
+   "pos_uvh": [
+    1.529,
+    5.602,
+    2.458
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 35.0
+  },
+  {
+   "nome": "luz_teto_spot_08",
+   "grupo": "teto",
+   "pos_uvh": [
+    0.964,
+    4.056,
+    2.473
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 28.0
+  },
+  {
+   "nome": "luz_teto_spot_09",
+   "grupo": "teto",
+   "pos_uvh": [
+    1.009,
+    5.356,
+    2.473
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 34.0
+  },
+  {
+   "nome": "luz_abajur_abajur_0",
+   "grupo": "abajur",
+   "pos_uvh": [
+    0.22,
+    3.525,
+    0.7
+   ],
+   "tipo": "POINT",
+   "potencia_w": 1.5
+  },
+  {
+   "nome": "luz_cozinha_luz_cozinha",
+   "grupo": "cozinha",
+   "pos_uvh": [
+    4.45,
+    1.1,
+    2.53
+   ],
+   "tipo": "AREA",
+   "potencia_w": 2.5999999046325684
+  }
+ ]
+}

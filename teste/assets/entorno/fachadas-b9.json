@@ -1,0 +1,67 @@
+{
+ "versao": "b9-2026-10-07",
+ "estilos": [
+  {
+   "id": "estreita",
+   "vidro_lin": [
+    0.0858,
+    0.0928,
+    0.0998
+   ],
+   "mascara": 0.802,
+   "parede_sombra": 1.0054
+  },
+  {
+   "id": "larga",
+   "vidro_lin": [
+    0.0862,
+    0.0935,
+    0.1008
+   ],
+   "mascara": 0.6828,
+   "parede_sombra": 0.9979
+  },
+  {
+   "id": "fita",
+   "vidro_lin": [
+    0.0861,
+    0.0935,
+    0.1009
+   ],
+   "mascara": 0.5237,
+   "parede_sombra": 0.983
+  },
+  {
+   "id": "cortina",
+   "vidro_lin": [
+    0.0966,
+    0.1168,
+    0.1371
+   ],
+   "mascara": 0.0,
+   "parede_sombra": 0.0
+  },
+  {
+   "id": "varanda",
+   "vidro_lin": [
+    0.1018,
+    0.1299,
+    0.1294
+   ],
+   "mascara": 0.093,
+   "parede_sombra": 1.0049
+  },
+  {
+   "id": "varanda_b",
+   "vidro_lin": [
+    0.0724,
+    0.0766,
+    0.0801
+   ],
+   "mascara": 0.4015,
+   "parede_sombra": 1.017
+  }
+ ],
+ "ref_parede": 0.24228112246555486,
+ "nota": "1 bay (3.10 m) x 1 floor (2.85 m) per tile; Cycles 5.2.2"
+}
