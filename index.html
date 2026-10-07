@@ -65,6 +65,10 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .dot.disponivel { background: var(--disp); }
 .dot.reservada { background: repeating-linear-gradient(135deg, var(--res) 0 3px, #8a5a00 3px 5px); }
 .dot.indisponivel { border: 1.5px solid var(--ind); }
+/* night: same 3 items, colours = the light of each state in the 3D (estados.js COR_LUZ_NOITE) */
+.legenda.noite .dot.disponivel { background: #ffc66e; box-shadow: 0 0 6px #ffc66e; }
+.legenda.noite .dot.reservada { background: #8a5c1c; }
+.legenda.noite .dot.indisponivel { background: #1a222c; border: 1.5px solid #5b6068; }
 .sol-ico { width: 14px; height: 14px; border-radius: 50%; background: #f4c45a; box-shadow: 0 0 0 3px rgba(244,196,90,.25); flex: none; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 

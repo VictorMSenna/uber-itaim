@@ -360,8 +360,9 @@ function aplicarSol(i, estacao) {
   $('#cena').classList.toggle('noite', solAtivo && noite);
   const leg = $('#noite-legenda');
   // F27: the Foto view is the real daytime photo only (no night overlay, no status): the legend is 3D-only
-  leg.hidden = !(solAtivo && noite && app.vista !== 'foto');
-  leg.textContent = ROTULO_NOITE; // F25
+  // Victor 07/10 08:40: no night banner over the tower; the top 3-item legend itself switches to the night colours
+  leg.hidden = true;
+  document.querySelector('.legenda')?.classList.toggle('noite', solAtivo && noite && app.vista !== 'foto');
   const foto = $('#foto');
   foto.style.setProperty('--noite', '0');
   foto.style.setProperty('--luzes', '0');
