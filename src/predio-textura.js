@@ -113,7 +113,7 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
           if (vTem > 0.5) { vec4 tA = texture2D(uAtlas, vUvA); diffuseColor.rgb = mix(uLimpa, tA.rgb * mix(0.55, 1.0, tA.a), lodFoto()); }`)
         .replace('#include <emissivemap_fragment>', unid ? `#include <emissivemap_fragment>
           if (vTem > 0.5 && uNoite > 0.0) { float lB = dot(texture2D(uAtlas, vUvA).rgb, vec3(0.2126, 0.7152, 0.0722));
-            totalEmissiveRadiance += uNoite * (1.0 - smoothstep(0.06, 0.3, lB)) * vec3(1.0, 0.72, 0.45) * 0.9; }` : '#include <emissivemap_fragment>');
+            totalEmissiveRadiance += 0.0 * lB; } // orq 07/10: no photo-based night glow (amber lines on piers/slabs)` : '#include <emissivemap_fragment>');
     };
     mat.customProgramCacheKey = () => 'b7-predio-' + (unid ? 'u' : 'v') + (texMasc ? 'm' : '');
     mat.userData.atlas = atlas; mat.userData.mascara = texMasc; // F45 test hook
