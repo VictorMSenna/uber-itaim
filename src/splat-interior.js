@@ -89,6 +89,7 @@ async function criar({ container, aoFechar, base = 'assets/splat/', qualidade = 
   estilo();
   const PTS = Object.fromEntries(man.pontos.map((p) => [p.id, p]));
   const celular = qualidade === 'celular' || (qualidade === 'auto' && (matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 700));
+  const toque = matchMedia('(pointer: coarse)').matches || window.innerWidth < 900; // (B1) phones/tablets: resolution cap 1.0
   // phones get the full build (truncating the SH bands left dark/blue streaks on the ceiling, 07/10); the light build
   // (SH baked into the base colour, 10 MB) only on data-saver / 2G-3G connections or with qualidade 'leve'
   const con = navigator.connection || {};
@@ -114,7 +115,10 @@ async function criar({ container, aoFechar, base = 'assets/splat/', qualidade = 
 
   // ---------------------------------------------------------------- three + Spark
   const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: teste, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(pixelRatio || Math.min(window.devicePixelRatio || 1, celular ? 1.25 : 1.5));
+  // (B1, Victor's phone 'travado'): cap 1.0 on phones/tablets, 1.5 on desktop; then adaptive (see the loop)
+  const PR_MAX = Math.min(window.devicePixelRatio || 1, toque ? 1.0 : 1.5);
+  let prAtual = pixelRatio || PR_MAX;
+  renderer.setPixelRatio(prAtual);
   raiz.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0d0f0e);
@@ -122,7 +126,7 @@ async function criar({ container, aoFechar, base = 'assets/splat/', qualidade = 
   const { SparkRenderer, SplatMesh } = await import(SPARK);
   // maxPixelRadius: Spark's default 512 px clips the big wall/ceiling gaussians seen up close at desktop resolution
   // (dark smears); maxStdDev 3 = the 3-sigma extent the trainer (gsplat) used.
-  const spark = new SparkRenderer({ renderer, maxPixelRadius: 4096, maxStdDev: 3, enableLod: false });
+  const spark = new SparkRenderer({ renderer, maxPixelRadius: 4096, maxStdDev: 3, enableLod: false, minSortIntervalMs: toque ? 120 : 0 }); // (B1) phones: sort less often
   scene.add(spark);
   const M = new THREE.Matrix4().fromArray(man.matriz);
   const progresso = (f) => carga.style.setProperty('--p', Math.round(100 * f) + '%');
@@ -153,7 +157,7 @@ async function criar({ container, aoFechar, base = 'assets/splat/', qualidade = 
     if (b64) lidos.splice(0, lidos.length, ...pedacos.map((p) => p[0].length));
     const bytes = new Uint8Array(lidos.reduce((a, b) => a + b, 0)); let o = 0;
     for (const bl of pedacos.flat()) { bytes.set(bl, o); o += bl.length; }
-    mesh = new SplatMesh({ fileBytes: bytes, fileType: arq.tipo || 'ply', fileName: 'studio.' + (arq.tipo || 'ply') });
+    mesh = new SplatMesh({ fileBytes: bytes, fileType: arq.tipo || 'ply', fileName: 'studio.' + (arq.tipo || 'ply'), maxSh: toque ? 1 : 3 }); // (B1) phones: SH degree 1
   } else {
     mesh = new SplatMesh({ url: base + arq.url, onProgress: (e) => { if (e.total) progresso(e.loaded / e.total); } });
   }
@@ -263,6 +267,7 @@ async function criar({ container, aoFechar, base = 'assets/splat/', qualidade = 
 
   // ---------------------------------------------------------------- loop
   const fps = { n: 0, t0: performance.now(), valor: 0, quadros: [] };
+  const ad = { dts: [], ult: 0 };
   renderer.setAnimationLoop((t) => {
     if (est.anim) {
       const a = est.anim, u = Math.min(1, (t - a.t0) / a.dur), s = suave(u);
@@ -274,6 +279,17 @@ async function criar({ container, aoFechar, base = 'assets/splat/', qualidade = 
     aplicaCamera();
     renderer.render(scene, camera);
     atualizaAlvos();
+    // (B1) adaptive resolution: median frame time over 30 frames > 28 ms -> step down (1.0 -> 0.75 -> 0.6); < 14 ms -> up
+    if (pixelRatio == null) {
+      if (ad.ult) { ad.dts.push(t - ad.ult); if (ad.dts.length >= 30) {
+        const m = ad.dts.sort((a, b) => a - b)[15]; ad.dts = [];
+        const passos = [PR_MAX, Math.min(PR_MAX, 0.75), Math.min(PR_MAX, 0.6)];
+        let k = passos.indexOf(prAtual); if (k < 0) k = 0;
+        if (m > 28 && k < passos.length - 1) k++; else if (m < 14 && k > 0) k--;
+        if (passos[k] !== prAtual) { prAtual = passos[k]; renderer.setPixelRatio(prAtual); tamanho(); }
+      } }
+      ad.ult = t;
+    }
     fps.n++; if (t - fps.t0 > 1000) { fps.valor = (fps.n * 1000) / (t - fps.t0); fps.quadros.push(fps.valor); fps.n = 0; fps.t0 = t; }
   });
 
@@ -310,7 +326,7 @@ async function criar({ container, aoFechar, base = 'assets/splat/', qualidade = 
   const api = {
     irPara, fechar: () => fechar(true), poseQuadro,
     olhar: (yaw, pitch) => { est.yaw = yaw; est.pitch = pitch; limita(); },   // same clamp as a drag
-    estado: () => ({ ponto: est.ponto, yaw: est.yaw, pitch: est.pitch, fov: camera.fov, arquivo: arq.url || arq.partes.join('+'), gaussianas: arq.gaussianas,
+    estado: () => ({ pixelRatio: renderer.getPixelRatio(), ponto: est.ponto, yaw: est.yaw, pitch: est.pitch, fov: camera.fov, arquivo: arq.url || arq.partes.join('+'), gaussianas: arq.gaussianas,
       fps: fps.valor, fpsHistorico: fps.quadros.slice(-30), pos: camera.position.toArray() }),
     renderer, camera, scene, mesh,
   };

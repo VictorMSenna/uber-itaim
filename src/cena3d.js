@@ -226,6 +226,11 @@ export function criarCena({ container, predio, unidades, teste = false,
     unidade: matUnidade,    // white so instanceColor shows the status colour exactly
   } });
   scene.add(PB.grupo);
+  // F45: the facade shader (predio-textura.js) reads a 'uvB' attribute on the cube shared by all of B5's meshes. If
+  // it is only added when the facade arrives, the cube was already drawn without it: some loads then bound the
+  // attribute as constant (0,0) and every face sampled one texel of the photo (flat dark tower). Add it up front,
+  // before the first frame, whatever finishes first.
+  PB.grupo.traverse((o) => { if (o.isMesh && o.geometry.attributes.uv && !o.geometry.attributes.uvB) o.geometry.setAttribute('uvB', o.geometry.attributes.uv.clone()); });
   // E5: B7's fillers (piers between units, slab bands between floors) as two extra instanced meshes (own meshes, so
   // B5's meshes keep the instance counts the facade photo bake was made for). Colours from the drone photo.
   {
@@ -1141,6 +1146,22 @@ export function criarCena({ container, predio, unidades, teste = false,
       return { alvo: [ALVO.x, ALVO.z], caixa: new THREE.Box3().setFromObject(PB.grupo) };
     },
     b7Estado: () => ({ entornoFora: DRONE, entornoCarregado: !!entB7.carregado, fachada: b7.fachada }),
+    // F45 test hook: is the facade really bound on the units mesh, and how many units carry each state colour
+    malhasInfo: () => PB.grupo.children.filter((m) => m.isMesh).map((m) => ({ n: m.name, cont: m.count, key: m.material.customProgramCacheKey ? m.material.customProgramCacheKey() : '-', comp: !!m.material.userData.compilado, cor: m.material.color && m.material.color.getHexString(), vis: m.visible })),
+    contaLuzes: () => { const c = {}; let somb = 0; scene.traverse((o) => { if (o.isLight) { c[o.type] = (c[o.type] || 0) + 1; if (o.castShadow) somb++; } });
+      return { luzes: c, comSombra: somb, maxTex: renderer.capabilities.maxTextures, maxVertTex: renderer.capabilities.maxVertexTextures, programas: renderer.info.programs.length }; },
+    luzInfo: () => ({ sol: sol.intensity, solCast: sol.castShadow, env: scene.environmentIntensity, hemi: hemi.intensity, expo: renderer.toneMappingExposure,
+      mapa: sol.shadow.mapSize.x, ultimo: solEstado.ultimo, ativo: solEstado.ativo, modo: solEstado.modo, gradeFn: !!gradeFn, ceu: ceuFisico.visible,
+      matU: { cor: meshUnid.material.color.getHexString(), emis: meshUnid.material.emissive ? meshUnid.material.emissive.getHexString() : null, ver: meshUnid.material.version } }),
+    fachadaInfo: () => {
+      const m = meshUnid.material, u = m.userData || {};
+      const cont = { disponivel: 0, reservada: 0, indisponivel: 0 };
+      unidades.forEach((x) => { cont[x.situacao]++; });
+      const cor = new THREE.Color(), porCor = {};
+      for (let i = 0; i < meshUnid.count; i++) { meshUnid.getColorAt(i, cor); const k = cor.getHexString(); porCor[k] = (porCor[k] || 0) + 1; }
+      return { material: m.name || m.type, chave: m.customProgramCacheKey ? m.customProgramCacheKey() : null, atlasPronto: !!(u.atlas && u.atlas.image && u.atlas.image.complete !== false && u.atlas.image.width),
+        mascaraPronta: !!(u.mascara && u.mascara.image && u.mascara.image.width), compilado: !!u.compilado, situacoes: cont, coresInstancia: porCor };
+    },
     info() { return { ...stats, programas: renderer.info.programs ? renderer.info.programs.length : null, dpr: renderer.getPixelRatio(), largura, altura, sombraMapa: sol.shadow.mapSize.x, instancias: unidades.length }; },
   };
 }

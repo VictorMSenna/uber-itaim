@@ -65,6 +65,7 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
     const limpa = mesh.material.color.clone(); // E5c (B1): clean colour used up close (LOD by distance)
     mat.color.set(0xffffff);
     mat.onBeforeCompile = (sh) => {
+      mat.userData.compilado = true; // F45 test hook
       Object.assign(sh.uniforms, U, { uAtlas: { value: atlas }, uRects: { value: tex }, uMascara: { value: texMasc }, uLimpa: { value: limpa } });
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec2 uvB; uniform sampler2D uRects; varying vec2 vUvA; varying float vTem; varying vec2 vUvB;')
@@ -79,7 +80,7 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
           uniform sampler2D uAtlas; uniform sampler2D uMascara; uniform float uNoite; uniform float uTinta; uniform vec3 uCorPadrao; uniform vec3 uLimpa;
           varying vec2 vUvA; varying float vTem; varying vec2 vUvB;
           // E5c (B1): the drone photo is too coarse up close: clean colours below ~65 m, photo above ~75 m
-          float lodFoto() { return smoothstep(65.0, 75.0, length(vViewPosition)); }`)
+          float lodFoto() { return 0.0; } // Victor (07/10, real phone): the drone photo reads as stains at every distance -> clean materials always`)
         .replace('#include <color_fragment>', unid ? `
           #include <color_fragment>
           vec3 corEstado = vec3(1.0);
@@ -115,6 +116,7 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
             totalEmissiveRadiance += uNoite * (1.0 - smoothstep(0.06, 0.3, lB)) * vec3(1.0, 0.72, 0.45) * 0.9; }` : '#include <emissivemap_fragment>');
     };
     mat.customProgramCacheKey = () => 'b7-predio-' + (unid ? 'u' : 'v') + (texMasc ? 'm' : '');
+    mat.userData.atlas = atlas; mat.userData.mascara = texMasc; // F45 test hook
     originais.push([mesh, mesh.material]);
     mesh.material = mat;
     aplicado.push(mesh.name);
@@ -147,7 +149,7 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
               float mk = smoothstep(0.25, 0.5, texture2D(uMascara, vUvM).r);
               vec2 qM = vUvQ; float bordaM = step(qM.x, 0.018) + step(0.982, qM.x) + step(qM.y, 0.03) + step(0.97, qM.y);
               float pertoM = 1.0 - clamp(bordaM, 0.0, 1.0);
-              diffuseColor.a *= mix(pertoM, mk, smoothstep(65.0, 75.0, length(vViewPositionM)));
+              diffuseColor.a *= pertoM; // clean doors at every distance: the whole pane lights (mask holes never show)
             }`);
       };
       material.customProgramCacheKey = () => 'b1-noite-mascara';

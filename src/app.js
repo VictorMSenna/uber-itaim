@@ -210,10 +210,12 @@ function abrirUnidade(id) {
     el('div', { class: 'cd-acoes' },
       el('a', { class: 'btn-pri', href: linkWhatsapp(u), target: '_blank', rel: 'noopener', id: 'btn-wa' },
         el('svg', {}), `Chamar no WhatsApp`),
-      el('button', { type: 'button', class: 'btn-sec', id: 'btn-interior', onclick: () => entrarApartamento(u.id) }, 'Entrar no apartamento'),
-      // B8 real walk-through (Gaussian splat of the 2026 clips): shown only when its manifest exists
-      el('button', { type: 'button', class: 'btn-sec', id: 'btn-splat', hidden: true, title: 'Passeio real de um studio do prédio (vídeo de 2026)', onclick: abrirPasseioReal },
-        'Passeio real (vídeo)', el('small', { class: 'btn-sub', text: 'de um studio do prédio · vídeo de 2026' })),
+      // Victor (07/10): the procedural interior looked like 'The Sims' -> "Entrar no apartamento" IS the real tour (splat)
+      b7Ativo('interiorProcedural')
+        ? el('button', { type: 'button', class: 'btn-sec', id: 'btn-interior', onclick: () => entrarApartamento(u.id) }, 'Entrar no apartamento')
+        : null,
+      el('button', { type: 'button', class: 'btn-sec', id: 'btn-splat', hidden: true, title: 'Passeio real de um studio do prédio (vídeo de 2026)', onclick: () => entrarApartamento(u.id) },
+        'Entrar no apartamento (vídeo real)', el('small', { class: 'btn-sub', text: 'de um studio do prédio · vídeo de 2026' })),
       numeroWa.length >= 10 ? null : el('p', { class: 'cd-wa-nota so-revisao' }, texto('[falta: número do WhatsApp do Hugo]'))),
     el('details', { class: 'detalhes', id: 'detalhes' },
       el('summary', { text: 'Ver detalhes' }),
@@ -256,9 +258,14 @@ function abrirUnidade(id) {
   estavaListaAberta = !$('#unidades').hidden; $('#unidades').hidden = true;
   $('#card').hidden = false;
   atualizarPainel();
-  import('./splat-interior.js').then((m) => m.splatDisponivel()).then((man) => { const b = $('#btn-splat'); if (b && man && app.unidade === id) b.hidden = false; }).catch(() => {});
+  // the single "Entrar no apartamento" button: the 360 tour when its manifest is live (08:15 switch), else the real video tour
+  Promise.all([manifestoTour360().catch(() => null), import('./splat-interior.js').then((m) => m.splatDisponivel()).catch(() => null)]).then(([t360, spl]) => {
+    const b = $('#btn-splat'); if (!b || app.unidade !== id || !(t360 || spl)) return;
+    b.hidden = false;
+    if (t360) { b.firstChild.textContent = 'Entrar no apartamento'; const sm = b.querySelector('.btn-sub'); if (sm) sm.textContent = 'imagem 3D do studio, feita a partir do vídeo de 2026'; }
+  });
   // prefetch the interior module while the client reads the card, so "Entrar no apartamento" opens fast
-  if (!interiorMod) setTimeout(() => { carregarInterior().catch(() => {}); }, 1200);
+  if (!interiorMod && b7Ativo('interiorProcedural')) setTimeout(() => { carregarInterior().catch(() => {}); }, 1200);
   carregarSol().then((S) => {
     if (app.unidade !== id) return;
     const est = S.rel.info().est;
@@ -400,8 +407,28 @@ async function manifestoTour360() {
   if (params.get('tour360') === '0') return null;
   // B6's v1 360 batch has an unconfirmed cove light: the real batch only goes on with CONFIG.demo.tour360Ativo
   if (!amostra && !CONFIG.demo.tour360Ativo) return null;
-  try { const r = await fetch(url, { method: 'GET', cache: 'no-cache' }); if (r.ok) { await r.json(); tour360Url = url; } } catch (e) { /* absent */ }
+  try {
+    const r = await fetch(url, { method: 'GET', cache: 'no-cache' });
+    if (r.ok) { const m = limparManifesto360(await r.json(), url); if (m) tour360Url = m; }
+  } catch (e) { /* absent */ }
   return tour360Url;
+}
+// 360 v3 (B6): keep only complete points (a sky layer + at least one sun or night layer, an image per layer), drop
+// neighbour links to missing points and any light layer whose fixture is not confirmed (Victor 22:5x: no light
+// without the fixture seen in the clips). Returns the manifest OBJECT (base = folder of the manifest) or null.
+const LUZES_CONFIRMADAS = ['teto', 'abajur', 'cozinha'];
+function limparManifesto360(man, url) {
+  if (!man || !Array.isArray(man.pontos)) return null;
+  const completo = (p) => p && p.id && p.camadas && p.camadas.ceu && p.camadas.ceu.arq;
+  const pontos = man.pontos.filter(completo).map((p) => {
+    const camadas = {};
+    for (const [k, v] of Object.entries(p.camadas)) if (k === 'ceu' || k === 'sol' || k === 'noite' || LUZES_CONFIRMADAS.includes(k)) camadas[k] = v;
+    return { ...p, camadas };
+  });
+  const ids = new Set(pontos.map((p) => p.id));
+  pontos.forEach((p) => { if (Array.isArray(p.vizinhos)) p.vizinhos = p.vizinhos.filter((v) => ids.has(v)); });
+  if (!pontos.length) return null;
+  return { ...man, pontos, base: man.base || url.replace(/[^/]*$/, '') };
 }
 async function carregarInterior() {
   if (interiorMod) return interiorMod;
@@ -506,6 +533,9 @@ function preencherBarraInterior(u) {
       el('p', { class: 'legenda-pequena', text: CONFIG.fotos2026.legenda }))));
 }
 async function entrarApartamento(id, { semAnimacao = false } = {}) {
+  // inside view: the 360 tour (tour360.js, with the outside sun bar) when its manifest is live; otherwise the real video
+  // tour (interim, 06:15); the procedural 3D interior only with ?interiorProcedural=1
+  if (!b7Ativo('interiorProcedural') && !(await manifestoTour360().catch(() => null))) { abrirPasseioReal(); return; }
   const u = porId.get(id);
   if (!u || interiorAberto || entrando) return;
   entrando = true;
