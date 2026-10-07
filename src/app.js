@@ -787,7 +787,8 @@ function ligar() {
   // F35: back from the card to the list, in the same panel
   $('#card-voltar').addEventListener('click', voltarLista);
   // F34: the bottom tab bar is gone: "Foto real" chip (outside view) and a "Unidades" chip when the panel is collapsed
-  $('#btn-foto-real').addEventListener('click', () => mostrarVista(app.vista === 'foto' ? '3d' : 'foto'));
+  // Victor 07/10 08:4x: "Foto real" shows the opening page (the drone photo the link opens with); "Ver unidades" closes it
+  $('#btn-foto-real').addEventListener('click', () => { if (!$('#card').hidden) fecharCard(); $('#abertura').hidden = false; });
   $('#btn-lista').addEventListener('click', () => { if (!$('#card').hidden) voltarLista(); else escolherUnidade(); });
   $('#unidades-fechar').addEventListener('click', () => painelUnidades(false));
   // F27: "Unidades" always goes to the 3D model with the units panel (never a panel over the photo)

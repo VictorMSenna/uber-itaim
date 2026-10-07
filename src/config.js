@@ -10,13 +10,13 @@ export const CONFIG = {
   atualizado: 'Dados copiados do PDF gerado no CV CRM em 05/10/2026 · hora [falta]',
 
   // WhatsApp that receives the leads (decision D7: Hugo's). Digits only, with country code, e.g. 5511999999999.
-  whatsapp: 'WHATSAPP_DO_HUGO',
+  whatsapp: '5511989325189', // Hugo, informado pelo Victor 07/10
   mensagemWhatsapp: (numero) => `Olá, tenho interesse na unidade ${numero} do Uber Itaim (tabela de outubro/2026)`,
 
   imobiliaria: 'Geracional',
   creciJ: '[falta: CRECI-J da Geracional]',
   corretor: 'Hugo Maron de Senna',
-  creciCorretor: '[falta: CRECI do Hugo]',
+  creciCorretor: '295793',
   construtora: '[falta: incorporadora/construtora]',
   registro: '[falta: registro/matrícula e cartório]',
   autorizacao: '[falta: autorização da construtora para anunciar]',

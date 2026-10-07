@@ -332,6 +332,18 @@ export function criarCena({ container, predio, unidades, teste = false,
   const solEstado = { ativo: false, noite: 0, luzes: 0, modo: 'real', flags: null, SOL: null, ref: null };
   const matUnidNoite = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0,
     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  // Victor 07/10 08:47: amber horizontal streaks on the tower at night = the top/bottom and side faces of each unit's
+  // light box showing in the slab gaps. Light only the facade faces (normal along the box's THIN horizontal axis).
+  matUnidNoite.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFachada;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float sxN = length(instanceMatrix[0].xyz), szN = length(instanceMatrix[2].xyz);
+        vec3 anN = abs(normal);
+        vFachada = sxN < szN ? step(0.5, anN.x) : step(0.5, anN.z);`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vFachada;')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (vFachada < 0.5) discard;');
+  };
+  matUnidNoite.customProgramCacheKey = () => 'unid-noite-fachada';
   const meshNoite = new THREE.InstancedMesh(box, matUnidNoite, unidades.length);
   unidadeBox.forEach((b, i) => meshNoite.setMatrixAt(inst[i], matrizBox(...b))); // E5: same instance order as PB's units
   meshNoite.visible = false; meshNoite.raycast = () => {};
@@ -382,7 +394,9 @@ export function criarCena({ container, predio, unidades, teste = false,
   const ALVO = caixaPredio.getCenter(new THREE.Vector3());
   const RAIO_PREDIO = caixaPredio.getBoundingSphere(new THREE.Sphere()).radius;
   const esferaPredio = new THREE.Sphere(ALVO.clone(), RAIO_PREDIO);
-  const limiteAlvo = new THREE.Box3(ALVO.clone().subScalar(0.25), ALVO.clone().addScalar(0.25));
+  // target may slide up/down the tower axis (unit focus), never sideways
+  const limiteAlvo = new THREE.Box3(new THREE.Vector3(ALVO.x - 0.25, 0, ALVO.z - 0.25), new THREE.Vector3(ALVO.x + 0.25, TOPO, ALVO.z + 0.25));
+  const alvoAtual = ALVO.clone();
   controls.setBoundary(limiteAlvo);
   controls.boundaryFriction = 0;
   let modoJanela = false;
@@ -425,7 +439,7 @@ export function criarCena({ container, predio, unidades, teste = false,
     if (modoJanela) return;
     const t = new THREE.Vector3();
     controls.getTarget(t);
-    if (t.distanceTo(ALVO) > 0.3) controls.moveTo(ALVO.x, ALVO.y, ALVO.z, anim);
+    if (t.distanceTo(alvoAtual) > 0.3) controls.moveTo(alvoAtual.x, alvoAtual.y, alvoAtual.z, anim);
   }
   const VISTAS = { inicio: { az: -0.78 * Math.PI, pol: POL.inicio } };
   function irVista(nome = 'inicio', anim = true) {
@@ -433,6 +447,7 @@ export function criarCena({ container, predio, unidades, teste = false,
     estado.andar = null; estado.unidade = null;
     selAndar.visible = selUnid.visible = false;
     pintar();
+    alvoAtual.copy(ALVO);
     controls.moveTo(ALVO.x, ALVO.y, ALVO.z, anim); // F34: the start view is the same with the sun on
     controls.rotateTo(vv.az, vv.pol, anim);
     // F39b: start view = as much of the sun arc as fits while the building keeps >= 15% of the free area (F19);
@@ -457,11 +472,13 @@ export function criarCena({ container, predio, unidades, teste = false,
     selUnid.geometry = caixaLinhas([b[0] - 0.12, b[1] - 0.12, b[2] - 0.12, b[3] + 0.12, b[4] + 0.12, b[5] + 0.12]);
     selUnid.visible = true;
     estado.unidade = id;
+    alvoAtual.set(ALVO.x, (b[1] + b[4]) / 2, ALVO.z);
+    controls.moveTo(alvoAtual.x, alvoAtual.y, alvoAtual.z, true);
     pulsoAte = performance.now() + SELECAO.pulsoSegundos * 1000; // F38: soft pulse for a few seconds, then solid
     pedirRender();
   }
   function setFiltro(fn) { estado.filtro = fn; pintar(); }
-  function limparSelecao() { estado.andar = null; estado.unidade = null; selAndar.visible = selUnid.visible = false; pintar(); }
+  function limparSelecao() { estado.andar = null; estado.unidade = null; selAndar.visible = selUnid.visible = false; alvoAtual.copy(ALVO); controls.moveTo(ALVO.x, ALVO.y, ALVO.z, true); pintar(); }
 
   // ---------- floor labels beside the silhouette
   const camadaRotulos = document.createElement('div');
@@ -569,9 +586,17 @@ export function criarCena({ container, predio, unidades, teste = false,
 
   const desloc = { x: 0, y: 0 };
   function aplicarDesloc() {
-    const x = Math.min(desloc.x, largura * 0.6), y = Math.min(desloc.y, altura * 0.6);
-    camera.aspect = (largura + x) / (altura + y);
-    if (x || y) camera.setViewOffset(largura + x, altura + y, x, y, largura, altura); else camera.clearViewOffset();
+    const x = Math.min(desloc.x, largura * 0.6);
+    let y = Math.min(desloc.y, altura * 0.6);
+    // Victor 07/10 08:4x (phone): the tower sat too high and its top was cut under the header chips. In portrait the
+    // top ~120 px are covered too: centre the target in the band between the chips and the bottom bar/sheet.
+    let oy = y, ext = y;
+    if (largura < altura) {
+      const topo = 120, d = Math.min(y, altura * 0.6) - topo;
+      ext = Math.abs(d); oy = d > 0 ? d : 0;
+    }
+    camera.aspect = (largura + x) / (altura + ext);
+    if (x || ext) camera.setViewOffset(largura + x, altura + ext, x, oy, largura, altura); else camera.clearViewOffset();
     camera.updateProjectionMatrix();
   }
   function redimensionar() {
