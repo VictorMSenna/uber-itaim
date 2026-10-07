@@ -340,7 +340,7 @@ export function criarCena({ container, predio, unidades, teste = false,
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vFachada = step(0.5, dot(normal, aFace));
         vec3 escN = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
-        transformed += aFace * 1.25 / max(escN, vec3(0.01));`);
+        `); // 07/10 10:5x: no outward push (light floated in front of the balcony, Victor)
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vFachada;')
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (vFachada < 0.5) discard;');
   };
