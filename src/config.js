@@ -51,8 +51,8 @@ export const CONFIG = {
     // B6 photoreal stills: shown first in the gallery only if this manifest exists ({ fotos: [{ arq, legenda }] })
     rendersManifesto: 'assets/render/demo/manifest.json',
     // B6 360 tour: replaces the 3D interior only if this manifest exists (the real batch); ?tour360=amostra tests the sample
-    tour360Ativo: false, // OFF until B6 confirms a batch without unconfirmed lights (coordinator 22:5x)
-    tour360Manifesto: 'assets/render/tour360/manifest.json',
+    tour360Ativo: true, // OFF until B6 confirms a batch without unconfirmed lights (coordinator 22:5x)
+    tour360Manifesto: 'assets/render/tour360/manifesto.json', // B6's v3 batch writes manifesto.json (manifest.json 404'd)
     tour360Amostra: 'assets/render/tour360/manifesto.json',
   },
 

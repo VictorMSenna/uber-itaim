@@ -417,13 +417,15 @@ body.painel-aberto .chip-lista, body.vista-foto .chip-lista { display: none; }
 #interior .int-slot .sol-ctl { pointer-events: auto; }
 /* B6 tour360 (flag): our header/bar replace its own close button and name; lights go below our bar; sun bar wide */
 #interior .t360-fechar { display: none !important; }
+#interior .t360-vista { display: none !important; } /* Victor (Image #137): no caption over the middle of the image; the footer caption stays */
 #interior .t360-nome { top: calc(env(safe-area-inset-top, 0px) + 64px); }
 #interior .t360-luzes { top: calc(env(safe-area-inset-top, 0px) + 66px); }
 #interior .t360-rot { bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); }
 @media (max-width: 760px) {
   #interior .t360-nome { top: calc(env(safe-area-inset-top, 0px) + 150px); }
-  #interior .t360-luzes { top: calc(env(safe-area-inset-top, 0px) + 150px); flex-direction: row; flex-wrap: wrap; left: 12px; right: 12px; justify-content: flex-end; }
-  #interior .t360-rot { bottom: calc(env(safe-area-inset-bottom, 0px) + 124px); }
+  #interior .t360-luzes { top: calc(env(safe-area-inset-top, 0px) + 150px); flex-direction: row; flex-wrap: wrap; gap: 6px; left: 12px; right: 12px; justify-content: flex-end; }
+  #interior .t360-luzes > * { margin: 0 !important; }
+  #interior .t360-rot { bottom: calc(env(safe-area-inset-bottom, 0px) + 160px); font-size: 11px; } /* orq 07/10: was over the 'segure' hint */
 }
 .ver-fora { position: absolute; z-index: 30; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); background: rgba(16,18,17,.82); color: #fff; font: 700 14.5px var(--f-body); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 .ver-fora:hover { background: rgba(16,18,17,.95); }

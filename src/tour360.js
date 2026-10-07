@@ -58,16 +58,16 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   }
   const cv = raiz.querySelector('.t360-cv');
   const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: teste });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(Math.min(matchMedia('(pointer: coarse)').matches || innerWidth < 900 ? 1 : 1.5, window.devicePixelRatio || 1)); // (B1) phones 1.0
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
   // phones: 2048 px panoramas (GPU memory: 7 layers x 2 points); desktop: full 4096 when the GPU allows it
   const movel = /Android|iPhone|iPad/i.test(navigator.userAgent);
-  const larguraMax = movel ? 2048 : Math.min(4096, renderer.capabilities.maxTextureSize);
+  const larguraMax = movel ? 2048 : Math.min(4096, renderer.capabilities.maxTextureSize); // phones 2048 (3072 crashed the test browser 07/10 08:0x)
 
   const cena = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 100);
-  let yaw = 0, pitch = 0, fov = 75; // yaw 0 = looking at the balcony (+v)
+  let yaw = 0, pitch = 0, fov = (innerHeight > innerWidth ? 90 : 75); // portrait phones: wider vertical fov so the horizontal view is not a narrow zoomed slice // yaw 0 = looking at the balcony (+v)
 
   // ---------------------------------------------------------------- panorama spheres (one per visible point)
   const RAIO = 5;
@@ -194,6 +194,7 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
         requestAnimationFrame(passo);
       });
       de.m.visible = false; para.m.material.opacity = 1;
+      de.mix.soltarCamadas(); // (B1) release the layers of the point we left
       estado.ponto = id; raiz.querySelector('.t360-nome').textContent = PTS[id].nome;
       montaHot(); desenha();
       andando = null;
@@ -201,8 +202,14 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
     return andando;
   }
 
+  // (B1) the sun bar fires many changes: one repaint at a time, latest state wins (no pile of concurrent decodes)
+  let pintando = null, pendente = false;
   async function repinta() {
-    const e = await pinta(estado.ponto); e.m.visible = true; desenha();
+    if (pintando) { pendente = true; return pintando; }
+    pintando = (async () => {
+      do { pendente = false; const e = await pinta(estado.ponto); e.m.visible = true; desenha(); } while (pendente);
+    })().finally(() => { pintando = null; });
+    return pintando;
   }
   function marcaLuzes() { raiz.querySelectorAll('[data-luz]').forEach((b) => b.setAttribute('aria-pressed', String(!!estado.luzes[b.dataset.luz]))); }
   raiz.querySelectorAll('[data-luz]').forEach((b) => b.addEventListener('click', () => { estado.luzes[b.dataset.luz] = !estado.luzes[b.dataset.luz]; marcaLuzes(); repinta(); }));

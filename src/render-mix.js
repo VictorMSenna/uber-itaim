@@ -63,8 +63,8 @@ void main(){
 async function carregaTextura(url, max) {
   const blob = await (await fetch(url)).blob();
   const opt = { imageOrientation: 'flipY', colorSpaceConversion: 'none', premultiplyAlpha: 'none' };
-  let bmp = await createImageBitmap(blob, opt);
-  if (max && bmp.width > max) { bmp.close?.(); bmp = await createImageBitmap(blob, { ...opt, resizeWidth: max, resizeHeight: max / 2, resizeQuality: 'high' }); }
+  // (B1) one off-thread decode, already at the target size (phones 2048): no full-size decode then a second one
+  const bmp = await createImageBitmap(blob, max ? { ...opt, resizeWidth: max, resizeHeight: max / 2, resizeQuality: 'medium' } : opt);
   const tx = new THREE.Texture(bmp);
   tx.flipY = false; tx.colorSpace = THREE.NoColorSpace; tx.generateMipmaps = false;
   tx.minFilter = THREE.LinearFilter; tx.magFilter = THREE.LinearFilter; tx.needsUpdate = true;
@@ -94,8 +94,13 @@ export class MisturaPonto {
   textura(rel) {
     if (!rel) return Promise.resolve(null);
     if (!this.cache.has(rel)) this.cache.set(rel, carregaTextura(this.base + rel, this.max));
-    return this.cache.get(rel);
+    // (B1) LRU: keep at most 9 layers of this point in memory (ceu + 2 sun + 3 lights + 3 spare)
+    const v = this.cache.get(rel); this.cache.delete(rel); this.cache.set(rel, v);
+    while (this.cache.size > 9) { const [k, p] = this.cache.entries().next().value; if (this.emUso && this.emUso.has(k)) break; this.cache.delete(k); p.then((t) => t && t.dispose()); }
+    return v;
   }
+  // (B1) free the layer textures of a point the visitor left (GPU memory); the mixed render target stays
+  soltarCamadas() { for (const p of this.cache.values()) p.then((t) => t && t.dispose()); this.cache.clear(); }
   // which layers + gains for a state; also returns the analytic mean (for exposure/white balance)
   plano({ estacao, minutos, luzes }) {
     const s = solNoInstante(this.SOL, estacao, minutos);
@@ -125,6 +130,7 @@ export class MisturaPonto {
   }
   async atualizar(estado) {
     const pl = this.plano(estado);
+    this.emUso = new Set(pl.lista.map((it) => it.c.arq));
     const tx = await Promise.all(pl.lista.map((it) => this.textura(it.c.arq)));
     const U = this.mat.uniforms;
     for (let i = 0; i < 7; i++) {
