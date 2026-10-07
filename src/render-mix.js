@@ -141,8 +141,9 @@ export class MisturaPonto {
     const nome = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
     if (gs > 0 && (ant !== undefined || pos !== undefined)) {
       // a layer only counts within 2 h of the asked time (outside the rendered sun window there is no direct sun)
-      const fa = ant !== undefined && minutos - ant <= 120 ? (pos !== undefined && pos - ant <= 120 ? (pos - minutos) / (pos - ant) : 1) : 0;
-      const fb = pos !== undefined && pos - minutos <= 120 ? 1 - fa : 0;
+      const entre = ant !== undefined && pos !== undefined && pos - ant <= 120;
+      const fa = entre ? (pos - minutos) / (pos - ant) : ant !== undefined ? Math.max(0, 1 - (minutos - ant) / 60) : 0;
+      const fb = entre ? 1 - fa : pos !== undefined ? Math.max(0, 1 - (pos - minutos) / 60) : 0;
       if (fa > 0) lista.push({ c: sol[nome(ant)], g: cs.map((x) => x * gs * fa) });
       if (fb > 0) lista.push({ c: sol[nome(pos)], g: cs.map((x) => x * gs * fb) });
     }
