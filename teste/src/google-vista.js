@@ -23,6 +23,8 @@ const LOGO = 'https://maps.gstatic.com/mapfiles/api-3/images/google_white5_hdpi.
 const ERRO_360 = (typeof location !== 'undefined' && +new URLSearchParams(location.search).get('gerr')) || capacidade().erro360;
 // ON by default (07/10); ?google3d=0 turns it off. Key: test harness (window.__G3D_KEY) or ?gkey=, else src/g3d-chave.js,
 // which only exists in the PUBLISHED copy (written by prepara_pages.py from the referrer-restricted site key)
+// radius (m) of Google's city around the camera: tiles farther than this are neither loaded nor drawn (?graio= to test)
+const RAIO = (typeof location !== 'undefined' && +new URLSearchParams(location.search).get('graio')) || 20000;
 export const desligadoPorUrl = () => /[?&]google3d=0/.test(location.search);
 async function chaveDaPagina() {
   const k = window.__G3D_KEY || new URLSearchParams(location.search).get('gkey');
@@ -90,18 +92,40 @@ export function iniciarGoogle() {
       // camera (a forgotten camera keeps loading tiles for a view nobody sees) and its detail target.
       s.tomar = (quem, pai, matriz, cam, erro) => {
         if (s.dono !== quem) {
+          s._recFeito = false;
           for (const c of [...tiles.cameras]) tiles.deleteCamera(c);
           tiles.setCamera(cam);
           const g = tiles.group; if (g.parent !== pai) { g.parent?.remove(g); pai.add(g); }
           s.dono = quem;
         }
         const g = tiles.group; g.matrixAutoUpdate = false;
-        if (!g.matrix.equals(matriz)) { g.matrix.copy(matriz); g.matrixWorldNeedsUpdate = true; }
+        if (!g.matrix.equals(matriz)) { g.matrix.copy(matriz); g.matrixWorldNeedsUpdate = true; if (s.atualizaRecorte) s.atualizaRecorte(); }
+        else if (s.dono === quem && s.recorte && s.recorte.ecefParaB5 && !s._recFeito) { s._recFeito = true; s.atualizaRecorte(); }
         tiles.errorTarget = erro;
       };
       // Memory (07/10, Victor's Android crashed "Ah, nao!"): tiles keep a CPU copy besides the GPU one. Dropping it was
       // tried and REVERTED: the outside view and the 360 draw the same tiles with two different WebGL contexts, and the second
       // one still needs the data ('Unsupported buffer data format'). Memory is held by the per-device budget (src/capacidade.js).
+      // Clip box of OUR tower (B5 frame): Google's own mesh of the building is not drawn inside it, in both views. One set
+      // of shared uniforms; uParaB5 = (ECEF -> B5) x inverse(current group world matrix), refreshed when a view takes the tiles.
+      s.recorte = { liga: { value: 0 }, min: { value: new THREE.Vector3() }, max: { value: new THREE.Vector3() }, paraB5: { value: new THREE.Matrix4() }, ecefParaB5: null };
+      const recortar = (o) => {
+        if (!o.isMesh || !o.material || o.material.__recorte) return;
+        const m = o.material; m.__recorte = true;
+        m.onBeforeCompile = (sh) => {
+          sh.uniforms.uRecLiga = s.recorte.liga; sh.uniforms.uRecMin = s.recorte.min; sh.uniforms.uRecMax = s.recorte.max; sh.uniforms.uParaB5 = s.recorte.paraB5;
+          sh.vertexShader = 'uniform mat4 uParaB5;\nvarying vec3 vB5;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvB5 = (uParaB5 * modelMatrix * vec4(transformed, 1.0)).xyz;');
+          sh.fragmentShader = 'uniform float uRecLiga;\nuniform vec3 uRecMin;\nuniform vec3 uRecMax;\nvarying vec3 vB5;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (uRecLiga > 0.5 && all(greaterThan(vB5, uRecMin)) && all(lessThan(vB5, uRecMax))) discard;');
+        };
+        m.customProgramCacheKey = () => 'g3d-recorte';
+        m.needsUpdate = true;
+      };
+      tiles.addEventListener('load-model', (ev) => ev.scene.traverse(recortar));
+      s.atualizaRecorte = () => {
+        if (!s.recorte.ecefParaB5) return;
+        tiles.group.updateMatrixWorld(true);
+        s.recorte.paraB5.value.copy(s.recorte.ecefParaB5).multiply(new THREE.Matrix4().copy(tiles.group.matrixWorld).invert());
+      };
       // unlit tiles: one colour multiplier for all of them, also for tiles that arrive later
       s.pintar = (k) => { s.cor = k; tiles.group.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setRGB(k[0], k[1], k[2]); }); };
       tiles.addEventListener('load-model', (ev) => { const k = s.cor; if (k[0] !== 1 || k[1] !== 1 || k[2] !== 1) ev.scene.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setRGB(k[0], k[1], k[2]); }); });
@@ -136,7 +160,7 @@ export class VistaGoogle {
     this.cam = new THREE.PerspectiveCamera(60, 1, 3, 20000);
     // tiles are SELECTED with a camera cropped to the window on screen (setViewOffset): nothing behind the walls is
     // downloaded, same pixel density inside the window. Drawing still uses the full camera.
-    this.camSel = new THREE.PerspectiveCamera(60, 1, 3, 20000);
+    this.camSel = new THREE.PerspectiveCamera(60, 1, 3, RAIO);
     this.dirs = null; this.mascaraFonte = null;
     this.rt = null; this.ativo = true; this.ocioso = 0; this.larg = 0; this.alt = 0; this.escala = 1;
     this.alvoDir = new THREE.Vector3(0, 0, -1);
@@ -326,7 +350,7 @@ export function ganhoParaSol(el, { dia = 1.35, noite = 0.14 } = {}) {
 // ref = { lat, lon, h, rumoX }: geodetic position of the B5 plan origin (sidewalk NW corner, y = 0) and bearing of +x (deg).
 // Scene frame of cena3d = B5 frame (x along +x, y up, z along +x + 90 deg). Our tower is NOT touched or hidden by this; only
 // the old city (B7 + B9 bake) is hidden once Google's tiles are actually visible, and shown again on any failure.
-export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, esconder = [], mostrar = () => {} }) {
+export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, esconder = [], mostrar = () => {}, recorte = null }) {
   const s = await iniciarGoogle();
   if (!s) return null;
   const { tiles } = s; if (typeof window !== 'undefined') window.__g3dTiles = tiles;
@@ -340,6 +364,11 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
   const m = new THREE.Matrix4();
   m.set(ax[0], ax[1], ax[2], -dot(ax, P), u[0], u[1], u[2], -dot(u, P), az[0], az[1], az[2], -dot(az, P), 0, 0, 0, 1);
   const g = tiles.group; g.renderOrder = -1;
+  // our tower's box in the B5 frame (= this scene's frame): Google's mesh of the same building is hidden inside it
+  if (recorte && !/[?&]recorte=0/.test(location.search)) {
+    s.recorte.min.value.copy(recorte.min); s.recorte.max.value.copy(recorte.max); s.recorte.ecefParaB5 = m.clone(); s.recorte.liga.value = 1;
+    s._recFeito = false; if (s.atualizaRecorte) s.atualizaRecorte();
+  }
   let ganhoCena = [1, 1, 1];
   const tam = new THREE.Vector2(), camSelFora = new THREE.PerspectiveCamera();
   let falhou = false, mostrando = false;
@@ -382,7 +411,7 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
         renderer.getDrawingBufferSize(tam); camera.updateMatrixWorld(true);
         const card = document.getElementById('card'), rc = card && !card.hidden ? card.getBoundingClientRect() : null;
         const fr = rc && rc.width > innerWidth * 0.8 && rc.top > innerHeight * 0.3 ? Math.min(1, rc.top / innerHeight + 0.05) : 1;
-        camSelFora.copy(camera, false);
+        camSelFora.copy(camera, false); camSelFora.far = Math.min(camSelFora.far, RAIO);
         if (fr < 1) camSelFora.setViewOffset(tam.x, tam.y, 0, 0, tam.x, Math.round(tam.y * fr)); else camSelFora.clearViewOffset();
         camSelFora.updateProjectionMatrix(); camSelFora.updateMatrixWorld(true);
         tiles.setResolution(camSelFora, tam.x, Math.round(tam.y * fr)); tiles.update();
@@ -415,7 +444,7 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
       // screen (measured 07/10: rows 37%..77% of the height, full width). A wider prefetch (97x70 deg) needed ~1.5 GB and
       // the cache threw the prefetched tiles away before the 360 used them (measured: 526 tiles downloaded again).
       const W = Math.round(innerWidth * Math.min(3, devicePixelRatio || 1)), H = Math.round(innerHeight * Math.min(3, devicePixelRatio || 1));
-      if (!api.camPre) api.camPre = new THREE.PerspectiveCamera(90, 1, 3, 20000);
+      if (!api.camPre) api.camPre = new THREE.PerspectiveCamera(90, 1, 3, RAIO);
       const c = api.camPre; c.fov = innerHeight > innerWidth ? 90 : 75; c.aspect = W / H;
       const y0 = Math.round(H * 0.37), hh = Math.round(H * 0.40);
       c.setViewOffset(W, H, 0, y0, W, hh); c.position.set(x, y, z); c.up.set(0, 1, 0);

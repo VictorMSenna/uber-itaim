@@ -256,21 +256,25 @@ export function criarCena({ container, predio, unidades, teste = false,
     import('./entorno.js').then(({ criarEntorno, gradeEntorno }) => {
       gradeFn = gradeEntorno || null; // E2: the tower follows the same twilight grade as the B7 city
       if (solEstado.ultimo && gradeFn) pedirRender();
-      entB7 = criarEntorno({ cena: scene, renderer, modo: 'externo', alvo: new THREE.Vector3(CX, TOPO * 0.45, CZ), aoCarregar: () => { entB7.carregado = true; chao.visible = rua.visible = false; if (entorno) entorno.visible = entornoFantasma.visible = false; pedirRender(); } });
+      entB7 = criarEntorno({ cena: scene, renderer, modo: 'externo', alvo: new THREE.Vector3(CX, TOPO * 0.45, CZ), aoCarregar: () => { entB7.carregado = true; chao.visible = rua.visible = false; if (entorno) entorno.visible = entornoFantasma.visible = false; pedirRender(); setTimeout(() => nossoCarregou(), 0); } });
     }).catch((e) => console.error('B7 entorno', e));
   }
   const b7 = { fachada: false };
   // B10 (local test, opt-in ?google3d=1 + key injected at runtime): Google Photorealistic 3D Tiles as the city. The tower (PB) stays on
   // top untouched; the B7 city + B9 bake are hidden only while Google's tiles are really on screen and come back on any failure.
   let gCena = null, torreCamada = false;
-  if (!/[?&]google3d=0/.test(location.search)) import('./google-vista.js').then(async (gm) => {
+  // Victor 07/10: OUR tower and city load first; Google's city starts downloading only after the facade texture and our
+  // city are on screen (or after 20 s, whichever comes first), so the phone's bandwidth goes to our model first
+  let avisaNosso = null; const nossoPronto = new Promise((ok) => { avisaNosso = ok; setTimeout(ok, 20000); });
+  const nossoCarregou = () => { if ((entB7.carregado || !DRONE) && (b7.fachada || !b7Ativo('fachada'))) avisaNosso(); };
+  if (!/[?&]google3d=0/.test(location.search)) nossoPronto.then(() => import('./google-vista.js')).then(async (gm) => {
     // origin of the B5 plan (sidewalk NW corner, y = 0): LiDAR-registered (b7 quadro.py); h = LiDAR 736.39 m + geoid N (-3.5 m, calibrated in RELATORIO-B10)
-    gCena = await gm.ligarGoogleCena({ scene, camera, renderer, ref: { lat: -23.5939395, lon: -46.6747339, h: 732.89, rumoX: 71.67 }, aoMudar: () => pedirRender(),
+    gCena = await gm.ligarGoogleCena({ scene, camera, renderer, ref: { lat: -23.5939395, lon: -46.6747339, h: 732.89, rumoX: 71.67 }, aoMudar: () => pedirRender(), recorte: (() => { const bx = new THREE.Box3().setFromObject(PB.grupo); bx.min.x -= 0.8; bx.min.z -= 0.8; bx.max.x += 0.8; bx.max.z += 0.8; bx.min.y = -6; bx.max.y += 3; return bx; })(),
       mostrar: () => { chao.visible = rua.visible = !entB7.carregado; if (entB7.grupo) entB7.grupo.visible = !!entB7.carregado; pedirRender(); } });
     if (gCena && solEstado.ultimo) gCena.definirSol(solEstado.ultimo.el);
   }).catch((e) => console.warn('google3d (cena) indisponivel', e && e.message));
   if (b7Ativo('fachada')) import('./predio-textura.js').then(({ texturizarPredio }) => texturizarPredio(PB, { renderer, mascara: true }).then((r) => {
-    b7.fachada = true; b7.mascara = !!(r.mascararMaterial && r.mascararMaterial(matUnidNoite)); // E5: night light only on the glass
+    b7.fachada = true; nossoCarregou(); b7.mascara = !!(r.mascararMaterial && r.mascararMaterial(matUnidNoite)); // E5: night light only on the glass
     if (b7.mascara) { const mascara = matUnidNoite.onBeforeCompile; matUnidNoite.onBeforeCompile = (sh) => { fachadaNoite(sh); mascara(sh); }; matUnidNoite.customProgramCacheKey = () => 'unid-noite-fachada-mascara'; matUnidNoite.needsUpdate = true; } // 07/10: keep the facade-only rule (mascararMaterial replaced it)
     // F30: compile the new programs now (facade + masked night light), not at the first dusk of a drag
     const v = meshNoite.visible; meshNoite.visible = true;
