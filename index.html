@@ -2,23 +2,24 @@
 <meta name="description" content="Uber Itaim, R. João Cachoeira 1577: escolha seu studio no prédio em 3D, com situação, preço e WhatsApp por unidade. Tabela de outubro/2026.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Archivo:wght@400..700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant:wght@500;600;700&family=Inter:wght@400..700&display=swap">
 <style>
 /* Concept: "night concrete". A full-bleed stage (3D model or drone photo) with floating frosted-graphite
    panels; palette taken from the building itself: light exposed concrete, brick of the top floors,
    green-tinted balcony glass. One dark visual world on purpose (single theme). Mobile first; desktop gets
    its own composition (docked units panel on the right, split opening). */
 :root {
-  --base: #101211;          /* graphite night */
-  --base-2: #181b19;
-  --painel: rgba(20, 23, 21, .74);
-  --painel-forte: rgba(16, 18, 17, .9);
-  --linha: rgba(240, 236, 228, .12);
-  --linha-2: rgba(240, 236, 228, .22);
-  --texto: #f1ede6;         /* light concrete */
-  --texto-2: #b8b1a5;
-  --tijolo: #c0603f;        /* brick, main action */
-  --tijolo-2: #d27453;
+  --base: #141210;          /* Geracional Pitch Black */
+  --base-2: #2c2c2a;        /* Geracional Graphite */
+  --painel: rgba(20, 18, 16, .74);
+  --painel-forte: rgba(20, 18, 16, .92);
+  --linha: rgba(245, 243, 239, .12);
+  --linha-2: rgba(245, 243, 239, .22);
+  --texto: #f5f3ef;         /* Geracional Parchment */
+  --texto-2: #bdb8b0;
+  --tijolo: #ef5b2e;        /* Geracional Spicy Paprika, main action */
+  --tijolo-2: #f3784f;
+  --amaranto: #8b1a3a;      /* Geracional Dark Amaranth */
   --vidro: #8fb8a9;         /* balcony glass, secondary accent */
   --disp: #009e73;          /* status colours (Okabe-Ito, legend G-D5) */
   --disp-txt: #46d6a9;
@@ -31,9 +32,9 @@
   --raio: 18px;
   --cena-ceu: #c3cbc9; --cena-fundo: #e2ddd3; --cena-chao: #d8d2c6; --cena-argila: #f0ece5; --cena-argila-2: #cec8bd;
   --cena-tijolo: #8a4a35; --cena-vizinho: #dcd7cd; --cena-linha: #3a3530; --cena-rua: #3c3e42; --cena-vidro: #9fbdb2; --cena-destaque: #14110f;
-  --f-display: "Bricolage Grotesque", "Archivo", "Helvetica Neue", Arial, sans-serif;
-  --f-body: "Archivo", "Segoe UI", Roboto, Arial, sans-serif;
-  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --f-display: "Cormorant", "The Seasons", Georgia, serif;
+  --f-body: "Inter", "Gill Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --f-mono: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
   --barra-h: 64px;
   --legal-h: 26px;
   color-scheme: dark;
@@ -95,6 +96,8 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .ab-topo { position: absolute; z-index: 2; top: calc(env(safe-area-inset-top, 0px) + 14px); left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--texto-2); }
 .ab-topo > span:first-child { background: rgba(16,18,17,.55); padding: 5px 10px; border-radius: 999px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .ab-topo b { color: var(--texto); font-weight: 600; letter-spacing: .04em; }
+.ab-logo { display: block; height: 34px; width: auto; }
+.ab-topo > span:first-child { display: flex; align-items: center; gap: 6px; }
 .ab-texto { position: relative; flex: none; padding: 6px 22px calc(env(safe-area-inset-bottom, 0px) + var(--legal-h) + 18px); display: grid; gap: 10px; max-width: 640px; }
 .ab-lugar { margin: 0; font: 600 11.5px var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--vidro); }
 .ab-nome { font: 800 clamp(48px, 14vw, 132px)/.86 var(--f-display); font-variation-settings: "opsz" 96; letter-spacing: -.035em; }
@@ -564,7 +567,7 @@ body.revisao .aviso-revisao { display: block !important; }
       <div class="ab-pino" style="left:44.63%;top:11.20%" aria-hidden="true"><b data-cfg="nome"></b><i></i></div>
     </figure>
     <div class="ab-veu" aria-hidden="true"></div>
-    <div class="ab-topo"><span><b data-cfg="imobiliaria"></b><span class="seg" data-seg="creciJ"> · CRECI-J <span data-cfg="creciJ"></span></span></span><span class="selo-teste">demonstração</span></div>
+    <div class="ab-topo"><span><img class="ab-logo" src="assets/marca/geracional.svg" alt="Geracional Negócios Imobiliários" width="107" height="34"><span class="seg" data-seg="creciJ"> · CRECI-J <span data-cfg="creciJ"></span></span></span><span class="selo-teste">demonstração</span></div>
   </div>
   <div class="ab-texto">
     <p class="ab-lugar">R. João Cachoeira, 1577 · Itaim Bibi</p>

@@ -258,6 +258,7 @@ export function criarCena({ container, predio, unidades, teste = false,
   const b7 = { fachada: false };
   if (b7Ativo('fachada')) import('./predio-textura.js').then(({ texturizarPredio }) => texturizarPredio(PB, { renderer, mascara: true }).then((r) => {
     b7.fachada = true; b7.mascara = !!(r.mascararMaterial && r.mascararMaterial(matUnidNoite)); // E5: night light only on the glass
+    if (b7.mascara) { const mascara = matUnidNoite.onBeforeCompile; matUnidNoite.onBeforeCompile = (sh) => { fachadaNoite(sh); mascara(sh); }; matUnidNoite.customProgramCacheKey = () => 'unid-noite-fachada-mascara'; matUnidNoite.needsUpdate = true; } // 07/10: keep the facade-only rule (mascararMaterial replaced it)
     // F30: compile the new programs now (facade + masked night light), not at the first dusk of a drag
     const v = meshNoite.visible; meshNoite.visible = true;
     try { renderer.compile(scene, camera); } catch (e) { /* optimisation only */ }
@@ -334,19 +335,22 @@ export function criarCena({ container, predio, unidades, teste = false,
     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   // Victor 07/10 08:47: amber horizontal streaks on the tower at night = the top/bottom and side faces of each unit's
   // light box showing in the slab gaps. Light only the facade faces (normal along the box's THIN horizontal axis).
-  matUnidNoite.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFachada;')
+  const fachadaNoite = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFachada;\nattribute vec3 aFace;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vec3 cN = instanceMatrix[3].xyz;
-        float axN = abs(cN.x - ${((BX0 + BX1) / 2).toFixed(3)}) / ${((BX1 - BX0) / 2).toFixed(3)};
-        float azN = abs(cN.z - ${((BZ0 + BZ1) / 2).toFixed(3)}) / ${((BZ1 - BZ0) / 2).toFixed(3)};
-        vec3 anN = abs(normal);
-        vFachada = axN > azN ? step(0.5, anN.x) : step(0.5, anN.z);`);
+        vFachada = step(0.5, dot(normal, aFace));
+        vec3 escN = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
+        transformed += aFace * 1.25 / max(escN, vec3(0.01));`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vFachada;')
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (vFachada < 0.5) discard;');
   };
+  matUnidNoite.onBeforeCompile = fachadaNoite;
   matUnidNoite.customProgramCacheKey = () => 'unid-noite-fachada';
-  const meshNoite = new THREE.InstancedMesh(box, matUnidNoite, unidades.length);
+  const boxNoite = box.clone();
+  const faceArr = new Float32Array(unidades.length * 3);
+  unidades.forEach((u, i) => { const nn = PB.unidades.get(u.id)?.normal; if (nn) faceArr.set([nn.x, nn.y, nn.z], inst[i] * 3); });
+  boxNoite.setAttribute('aFace', new THREE.InstancedBufferAttribute(faceArr, 3));
+  const meshNoite = new THREE.InstancedMesh(boxNoite, matUnidNoite, unidades.length);
   unidadeBox.forEach((b, i) => meshNoite.setMatrixAt(inst[i], matrizBox(...b))); // E5: same instance order as PB's units
   meshNoite.visible = false; meshNoite.raycast = () => {};
   scene.add(meshNoite);

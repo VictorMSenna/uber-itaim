@@ -238,11 +238,11 @@ function abrirUnidade(id) {
         el('section', { class: 'det-bloco', id: 'det-sol' }),
         el('section', { class: 'det-bloco' }, el('h3', { text: 'Fotos reais (2026)' }), galeriaMiniaturas(),
           el('p', { class: 'legenda-pequena', text: CONFIG.fotos2026.legenda })),
-        el('button', { type: 'button', class: 'btn-txt', onclick: () => abrirTour(CONFIG, u) }, 'Fotos antigas de um studio (2021)'),
+        el('button', { type: 'button', class: 'btn-txt', onclick: () => abrirTour(CONFIG, u) }, 'Mais fotos'),
         el('section', { class: 'det-bloco' }, el('h3', { text: 'Compartilhar' }),
           el('button', { type: 'button', class: 'btn-txt', id: 'btn-copiar', onclick: () => copiarLink(u) }, 'Copiar link desta unidade'),
           el('input', { class: 'link-txt mono', id: 'link-txt', readonly: true, value: linkUnidade(u), 'aria-label': 'Link desta unidade' })),
-        el('p', { class: 'legenda-pequena', text: `Fonte: tabela do CV de 05/10/2026${u.fonte?.includes('pagina') ? ', ' + u.fonte.split(', ')[1] : ''}.` }))),
+        el('p', { class: 'legenda-pequena', text: `Fonte: tabela do CV de 05/10/2026${u.fonte?.includes('pagina') ? ', ' + u.fonte.split(', ')[1].replace('pagina', 'página') : ''}.` }))),
   );
   // WhatsApp icon
   const ico = $('#btn-wa svg');
