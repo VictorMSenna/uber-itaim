@@ -1,0 +1,146 @@
+{
+ "quadro": "mesmo de dados/b6-inventario.json (u_s, v, h em metros); glTF y-up: x = u_s, y = h, z = v",
+ "luz_do_bake": "ceu do dia (HDRI CC0) pela janela, luminarias APAGADAS; o site soma sol/luminarias por cima",
+ "triangulos_antes_depois_decimate": [
+  1221054,
+  366304
+ ],
+ "atlas_px": 1024,
+ "amostras": 32,
+ "segundos_bake": 35.2,
+ "mb_glb": 1.64,
+ "luminarias": [
+  {
+   "nome": "luz_teto_spot_00",
+   "grupo": "teto",
+   "pos_uvh": [
+    1.447,
+    3.739,
+    2.492
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_01",
+   "grupo": "teto",
+   "pos_uvh": [
+    2.583,
+    3.719,
+    2.448
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_02",
+   "grupo": "teto",
+   "pos_uvh": [
+    3.552,
+    3.83,
+    2.446
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_03",
+   "grupo": "teto",
+   "pos_uvh": [
+    3.942,
+    4.258,
+    2.443
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_04",
+   "grupo": "teto",
+   "pos_uvh": [
+    3.95,
+    5.35,
+    2.405
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_05",
+   "grupo": "teto",
+   "pos_uvh": [
+    3.707,
+    5.587,
+    2.455
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_06",
+   "grupo": "teto",
+   "pos_uvh": [
+    2.592,
+    5.611,
+    2.44
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_07",
+   "grupo": "teto",
+   "pos_uvh": [
+    1.533,
+    5.596,
+    2.457
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_08",
+   "grupo": "teto",
+   "pos_uvh": [
+    0.943,
+    4.078,
+    2.492
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_teto_spot_09",
+   "grupo": "teto",
+   "pos_uvh": [
+    0.939,
+    5.299,
+    2.492
+   ],
+   "tipo": "SPOT",
+   "potencia_w": 70.0
+  },
+  {
+   "nome": "luz_abajur_abajur_0",
+   "grupo": "abajur",
+   "pos_uvh": [
+    0.22,
+    3.525,
+    0.7
+   ],
+   "tipo": "POINT",
+   "potencia_w": 1.5
+  },
+  {
+   "nome": "luz_cozinha_luz_cozinha",
+   "grupo": "cozinha",
+   "pos_uvh": [
+    4.45,
+    1.1,
+    2.53
+   ],
+   "tipo": "AREA",
+   "potencia_w": 2.5999999046325684
+  }
+ ]
+}

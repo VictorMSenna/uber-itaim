@@ -1,0 +1,44 @@
+[
+ {
+  "nome": "01-sala-vista",
+  "origem": "01-sala-vista@0.8.png",
+  "w": 900,
+  "h": 1600,
+  "kb": 78.8
+ },
+ {
+  "nome": "03-cama-sofa-sacada",
+  "origem": "03-cama-sofa-sacada@3.7.png",
+  "w": 900,
+  "h": 1600,
+  "kb": 85.9
+ },
+ {
+  "nome": "04-vista-da-sacada",
+  "origem": "04-vista-da-sacada@0.8.png",
+  "w": 900,
+  "h": 1600,
+  "kb": 125.6
+ },
+ {
+  "nome": "06-quarto-frente",
+  "origem": "06-quarto-frente@1.7.png",
+  "w": 900,
+  "h": 1600,
+  "kb": 154.6
+ },
+ {
+  "nome": "07-cama-detalhe",
+  "origem": "07-cama-detalhe@0.2.png",
+  "w": 900,
+  "h": 1600,
+  "kb": 52.4
+ },
+ {
+  "nome": "08-cabeceira-quadros",
+  "origem": "08-cabeceira-quadros@1.7.png",
+  "w": 900,
+  "h": 1600,
+  "kb": 30.2
+ }
+]
