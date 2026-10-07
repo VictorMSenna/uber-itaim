@@ -7,6 +7,7 @@
 //   definirHora(minutos) · definirEstacao(estacao) · definirLuz(nome, ligada) · irPara(id) · estadoTour360() · fecharTour360()
 // Frames: manifest points are in the plan of the unit (u, v, h metres; v toward the balcony). three.js world:
 //   X = -v, Y = h, Z = u  (pano centre = +v = -X, turning right = increasing pano u, like the Blender equirect camera).
+import { capacidade } from './capacidade.js';
 import * as THREE from 'three';
 import { SOL } from './dados-sol.js';
 import { MisturaPonto, ROTULO, LUZES, INFO } from './render-mix.js';
@@ -59,12 +60,12 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   }
   const cv = raiz.querySelector('.t360-cv');
   const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: teste });
-  renderer.setPixelRatio(Math.min(3, window.devicePixelRatio || 1)); // 07/10 Victor: full screen density on phones (max 3) // orq 07/10 08:4x: phones at real screen density (1.0 made a 390-px image stretched ~3x = blurry on Victor's phone); one sphere is cheap
+  renderer.setPixelRatio(Math.min(capacidade().dprMax, window.devicePixelRatio || 1)); // tier of this device (src/capacidade.js) // 07/10 Victor: full screen density on phones (max 3) // orq 07/10 08:4x: phones at real screen density (1.0 made a 390-px image stretched ~3x = blurry on Victor's phone); one sphere is cheap
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
   // phones: 2048 px panoramas (GPU memory: 7 layers x 2 points); desktop: full 4096 when the GPU allows it
   const movel = /Android|iPhone|iPad/i.test(navigator.userAgent);
-  const larguraMax = Math.min(4096, renderer.capabilities.maxTextureSize); // 07/10 Victor: 4096 on phones too // phones full 3072 (07/10 08:3x: 2048 + narrow portrait view looked blurry on Victor's phone; the 08:0x 'crash' was the degraded test browser)
+  const larguraMax = Math.min(capacidade().larguraPano, renderer.capabilities.maxTextureSize); // 07/10 Victor: 4096 on phones too // phones full 3072 (07/10 08:3x: 2048 + narrow portrait view looked blurry on Victor's phone; the 08:0x 'crash' was the degraded test browser)
 
   const cena = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 100);
@@ -268,8 +269,8 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
       const geo = new THREE.SphereGeometry(RAIO, 96, 48); geo.scale(-1, 1, 1);
       const malha = new THREE.Mesh(geo, mat); malha.renderOrder = 3; malha.visible = false; malha.frustumCulled = false; cena.add(malha);
       const st = document.createElement('style'); st.id = 't360-g3d-css';
-      st.textContent = '.t360-g3d{position:absolute;left:12px;bottom:78px;max-width:min(80%,360px);display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:5px 8px;border-radius:8px;background:rgba(0,0,0,.6);color:#fff;font:11px/1.25 system-ui,sans-serif;pointer-events:none}.t360-g3d img{height:16px;width:auto;display:block}.t360-g3d .g3d-attr{opacity:.85;flex-basis:100%}.t360-g3d .g3d-carga{flex-basis:100%;display:flex;flex-direction:column;gap:3px;opacity:.9}.t360-g3d .g3d-carga[hidden]{display:none}.t360-g3d .g3d-carga i{display:block;height:3px;border-radius:2px;background:rgba(255,255,255,.22);overflow:hidden}.t360-g3d .g3d-carga b{display:block;height:100%;width:4%;background:#fff;transition:width .4s ease}';
-      document.head.appendChild(st); raiz.appendChild(vista.credito);
+      st.textContent = '.t360-g3d{position:absolute;right:10px;bottom:78px;max-width:58%;display:flex;align-items:center;gap:5px;padding:2px 6px;border-radius:6px;background:rgba(0,0,0,.45);color:#fff;font:9px/1.2 system-ui,sans-serif;pointer-events:none;white-space:nowrap;overflow:hidden}.t360-g3d[hidden]{display:none}.t360-g3d img{height:11px;width:auto;display:block;flex:none}.t360-g3d .g3d-attr{opacity:.85;overflow:hidden;text-overflow:ellipsis}.t360-g3d-carga{position:absolute;left:12px;bottom:78px;width:160px;display:flex;flex-direction:column;gap:3px;padding:4px 8px;border-radius:7px;background:rgba(0,0,0,.45);color:#fff;font:10px/1.2 system-ui,sans-serif;pointer-events:none}.t360-g3d-carga[hidden]{display:none}.t360-g3d-carga i{display:block;height:2px;border-radius:2px;background:rgba(255,255,255,.25);overflow:hidden}.t360-g3d-carga b{display:block;height:100%;width:4%;background:#fff;transition:width .4s ease}';
+      document.head.appendChild(st); raiz.appendChild(vista.credito); raiz.appendChild(vista.carga);
       const dir = new THREE.Vector3(), tam = new THREE.Vector2(), perf = { n: 0, ms: 0, max: 0 }, camV = new THREE.PerspectiveCamera();
       let atual = null, falhou = false;
       G = {
@@ -317,8 +318,9 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
             vista.desenha(dir, camera.fov, camera.aspect, janela);
             vista.progresso(true);
             const op = vista.opacidade(); mat.uniforms.forca.value = op; if (op < 1) vista.acordar(); // keep frames coming during the fade
+            vista.credito.hidden = op <= 0; // the credit shows only while Google's city is on screen
             // credit + progress sit just above the image caption (the sun bar below would hide them)
-            if ((perf.n & 31) === 0) { const rot = raiz.querySelector('.t360-rot'); const topo = rot && rot.offsetParent ? rot.getBoundingClientRect().top : innerHeight - 120; vista.credito.style.bottom = Math.max(78, Math.round(raiz.getBoundingClientRect().bottom - topo + 8)) + 'px'; }
+            if ((perf.n & 31) === 0) { const rot = raiz.querySelector('.t360-rot'); const topo = rot && rot.offsetParent ? rot.getBoundingClientRect().top : innerHeight - 120; const bb = Math.max(78, Math.round(raiz.getBoundingClientRect().bottom - topo + 6)) + 'px'; vista.credito.style.bottom = bb; vista.carga.style.bottom = bb; }
             mat.uniforms.tG.value = vista.rt.texture; mat.uniforms.res.value.copy(tam);
             const dt = performance.now() - t0; perf.n++; perf.ms += dt; perf.max = Math.max(perf.max, dt);
             if (window.__g3d && window.__g3d.erro && /403|429|quota|key|denied|permission/i.test(window.__g3d.erro)) throw new Error(window.__g3d.erro);

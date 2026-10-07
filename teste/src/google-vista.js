@@ -8,6 +8,7 @@
 //
 // The key is NEVER in a file: it is read from window.__G3D_KEY (injected by the test harness) or ?gkey= on the URL.
 import * as THREE from 'three';
+import { capacidade } from './capacidade.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
@@ -19,7 +20,7 @@ const LOGO = 'https://maps.gstatic.com/mapfiles/api-3/images/google_white5_hdpi.
 // detail level: ?gerr=<px> sets the 360 target, the outside view uses 1.25x
 // 16 px at the drawing-buffer size (= ~5 CSS px on a 3x phone): measured 07/10 to look the same as 8 on a phone screen
 // (prints/b10/g11-niveis.png) with ~half the download; zooming in still refines, since the target is in screen pixels
-const ERRO_360 = (typeof location !== 'undefined' && +new URLSearchParams(location.search).get('gerr')) || 16;
+const ERRO_360 = (typeof location !== 'undefined' && +new URLSearchParams(location.search).get('gerr')) || capacidade().erro360;
 // ON by default (07/10); ?google3d=0 turns it off. Key: test harness (window.__G3D_KEY) or ?gkey=, else src/g3d-chave.js,
 // which only exists in the PUBLISHED copy (written by prepara_pages.py from the referrer-restricted site key)
 export const desligadoPorUrl = () => /[?&]google3d=0/.test(location.search);
@@ -63,6 +64,7 @@ export function iniciarGoogle() {
   sessao = (async () => {
     const chave = await chaveDaPagina();
     if (!chave || desligadoPorUrl()) { STATUS.estado = 'sem-chave'; return null; }
+    if (!capacidade().google) { STATUS.estado = 'aparelho-leve'; return null; } // weak phone: our city only
     STATUS.estado = 'carregando';
     try {
       const [{ TilesRenderer }, { GoogleCloudAuthPlugin }] = await Promise.all([import(`${CDN}index.js`), import(`${CDN}index.core-plugins.js`)]);
@@ -72,11 +74,15 @@ export function iniciarGoogle() {
       const gltf = new GLTFLoader(tiles.manager); gltf.setDRACOLoader(draco);
       tiles.manager.addHandler(/\.gltf$/, gltf);
       tiles.errorTarget = 8;                      // detail: close, narrow views (each view sets its own below)
-      if (tiles.downloadQueue) tiles.downloadQueue.maxJobs = 30; if (tiles.parseQueue) tiles.parseQueue.maxJobs = 8;
+      if (tiles.downloadQueue) tiles.downloadQueue.maxJobs = 30; if (tiles.parseQueue) tiles.parseQueue.maxJobs = capacidade().parse; // fewer parses per frame on phones: less stutter while loading
       // 07/10: at 300 MB the cache was FULL (315 MB) and the renderer refused every finer tile -> coarse city. The full-detail
       // view needs more; ?gmb=<MB> overrides for measuring. Same on phones (high-end target): no coarsening.
-      const mb = +new URLSearchParams(location.search).get('gmb') || 1200;
-      tiles.lruCache.maxBytesSize = mb * 1048576; tiles.lruCache.minBytesSize = Math.round(mb * 0.6) * 1048576;
+      // budget by device: phones report navigator.deviceMemory (GB, capped at 8); measured 07/10: outside view ~600 MB of tiles
+      const movel = capacidade().movel;
+      const mb = +new URLSearchParams(location.search).get('gmb') || capacidade().tilesMB;
+      tiles.lruCache.maxBytesSize = mb * 1048576;
+      // hidden tiles (parents / off-screen) are never uploaded, so they keep their CPU copy: on phones evict them early
+      tiles.lruCache.minBytesSize = Math.round(mb * (movel ? 0.3 : 0.6)) * 1048576;
       tiles.autoDisableRendererCulling = true;
       const escena = new THREE.Scene(); escena.add(tiles.group);
       const s = { tiles, escena, TilesRenderer, dono: null, cor: [1, 1, 1] };
@@ -93,6 +99,9 @@ export function iniciarGoogle() {
         if (!g.matrix.equals(matriz)) { g.matrix.copy(matriz); g.matrixWorldNeedsUpdate = true; }
         tiles.errorTarget = erro;
       };
+      // Memory (07/10, Victor's Android crashed "Ah, nao!"): tiles keep a CPU copy besides the GPU one. Dropping it was
+      // tried and REVERTED: the outside view and the 360 draw the same tiles with two different WebGL contexts, and the second
+      // one still needs the data ('Unsupported buffer data format'). Memory is held by the per-device budget (src/capacidade.js).
       // unlit tiles: one colour multiplier for all of them, also for tiles that arrive later
       s.pintar = (k) => { s.cor = k; tiles.group.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setRGB(k[0], k[1], k[2]); }); };
       tiles.addEventListener('load-model', (ev) => { const k = s.cor; if (k[0] !== 1 || k[1] !== 1 || k[2] !== 1) ev.scene.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setRGB(k[0], k[1], k[2]); }); });
@@ -222,7 +231,7 @@ export class VistaGoogle {
   // 0..1 opacity of the Google overlay (fade 0.8 s after it is ready)
   opacidade() { return this.pronto ? Math.min(1, (performance.now() - this.tPronto) / 800) : 0; }
   progresso(janelaNaTela) {
-    const st = this.s.tiles.stats, pend = st.queued + st.downloading + st.parsing, el = this.credito.querySelector('.g3d-carga');
+    const st = this.s.tiles.stats, pend = st.queued + st.downloading + st.parsing, el = this.carga;
     if (!el) return;
     const barra = el.querySelector('b');
     if (pend > 0) {
@@ -231,9 +240,9 @@ export class VistaGoogle {
       this._lote.p = Math.max(this._lote.p, feitos / (feitos + pend));
       clearTimeout(this._some); this._some = 0;
     }
-    // our render's city (inside the panorama) stays in the window until Google's batch is half loaded (the first seconds
-    // are melted blobs); then Google fades in and stays for this point, even if a new area starts loading
-    if (!this.pronto && (pend === 0 || (this._lote && this._lote.p >= 0.5))) { this.pronto = true; this.tPronto = performance.now(); }
+    // our render's city (inside the panorama) stays in the window until Google's view is COMPLETE (Victor 07/10: no melted
+    // blobs on screen); then Google fades in and stays for this point, even if a new area starts loading
+    if (!this.pronto && pend === 0 && st.visible > 0) { this.pronto = true; this.tPronto = performance.now(); }
     if (pend === 0) {
       // done: fill the bar, then hide it a moment later (the page may not render again, so a timer does it)
       if (this._lote && !this._some) { barra.style.width = '100%'; this._some = setTimeout(() => { el.hidden = true; this._lote = null; this._some = 0; }, 900); }
@@ -261,8 +270,10 @@ export class VistaGoogle {
   montaCredito() {
     const d = document.createElement('div');
     d.className = 't360-g3d';
-    d.innerHTML = '<span class="g3d-quem">Cidade: Google</span><img alt="Google Maps" src="' + LOGO + '" height="18" referrerpolicy="no-referrer"><span class="g3d-attr"></span>'
-      + '<span class="g3d-carga" hidden><span class="g3d-carga-txt">Montando a vista real da cidade</span><i><b></b></i></span>';
+    d.innerHTML = '<img alt="Google" src="' + LOGO + '" height="12" referrerpolicy="no-referrer"><span class="g3d-attr"></span>';
+    // discreet progress, a separate element (tour360 places it on the left, the credit sits small on the right)
+    this.carga = document.createElement('div'); this.carga.className = 't360-g3d-carga'; this.carga.hidden = true;
+    this.carga.innerHTML = '<span>Montando a vista real da cidade</span><i><b></b></i>';
     return d;
   }
   atualizaCredito() {
@@ -277,7 +288,7 @@ export class VistaGoogle {
     for (const ev of ['load-model', 'tiles-load-end', 'needs-update', 'tile-visibility-change']) this.s.tiles.removeEventListener(ev, this._aoCarregar);
     if (this.s.dono === this) { this.s.tiles.deleteCamera(this.camSel); this.s.dono = null; }
     if (this.rt) this.rt.dispose();
-    this.credito.remove();
+    this.credito.remove(); if (this.carga) this.carga.remove();
   }
 }
 
@@ -333,9 +344,17 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
   const tam = new THREE.Vector2(), camSelFora = new THREE.PerspectiveCamera();
   let falhou = false, mostrando = false;
   const cred = document.createElement('div'); cred.className = 'g3d-cena'; // not t360-g3d: the 360's CSS (bottom:78px) stretched it
-  cred.style.cssText = 'position:absolute;left:10px;top:138px;z-index:5;display:flex;gap:8px;align-items:center;padding:4px 8px;border-radius:8px;background:rgba(0,0,0,.6);color:#fff;font:11px system-ui,sans-serif;pointer-events:none';
-  cred.innerHTML = '<span>Cidade: Google</span><img alt="Google Maps" src="' + LOGO + '" height="16"><span class="g3d-attr" style="opacity:.85"></span>';
+  // compact credit in a corner (Victor 07/10: it took too much space): Google logo + data attribution, one line, top right
+  cred.style.cssText = 'position:absolute;right:8px;top:104px;z-index:5;display:flex;gap:5px;align-items:center;max-width:62%;padding:2px 6px;border-radius:6px;background:rgba(0,0,0,.45);color:#fff;font:9px/1.2 system-ui,sans-serif;pointer-events:none;white-space:nowrap;overflow:hidden';
+  cred.innerHTML = '<img alt="Google" src="' + LOGO + '" height="11" style="display:block;flex:none"><span class="g3d-attr" style="opacity:.85;overflow:hidden;text-overflow:ellipsis"></span>';
+  cred.hidden = true; // only while Google's city is on screen
   renderer.domElement.parentElement.appendChild(cred);
+  // our city stays until Google's first view is complete; meanwhile a discreet bar (top left, under the buttons)
+  const carga = document.createElement('div');
+  carga.style.cssText = 'position:absolute;left:10px;top:132px;z-index:5;display:flex;flex-direction:column;gap:3px;padding:4px 8px;border-radius:7px;background:rgba(0,0,0,.45);color:#fff;font:10px/1.2 system-ui,sans-serif;pointer-events:none;width:150px';
+  carga.innerHTML = '<span>Montando a cidade real</span><i style="display:block;height:2px;border-radius:2px;background:rgba(255,255,255,.25);overflow:hidden"><b style="display:block;height:100%;width:4%;background:#fff;transition:width .4s ease"></b></i>';
+  renderer.domElement.parentElement.appendChild(carga);
+  let lote0 = null, pMax = 0;
   const aoCarregar = () => aoMudar && aoMudar();
   for (const ev of ['load-model', 'tiles-load-end', 'needs-update']) tiles.addEventListener(ev, aoCarregar);
   const out = [];
@@ -370,7 +389,13 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
         out.length = 0; tiles.getAttributions(out);
         const txt = out.filter((a) => a.type === 'string' && a.value).map((a) => a.value).join(' · ');
         const el = cred.querySelector('.g3d-attr'); if (el.textContent !== txt) el.textContent = txt;
-        if (!mostrando && tiles.stats.visible > 8 && tiles.loadProgress > 0.9) mostrando = true;
+        const st = tiles.stats, pend = st.queued + st.downloading + st.parsing;
+        if (!mostrando) {
+          if (lote0 == null) lote0 = st.loaded;
+          const feitos = st.loaded - lote0; pMax = Math.max(pMax, pend > 0 ? feitos / (feitos + pend) : 0);
+          carga.querySelector('b').style.width = Math.round(4 + 96 * pMax) + '%';
+          if (pend === 0 && st.visible > 8) { mostrando = true; carga.remove(); cred.hidden = false; }
+        }
         if (pendente()) bombear();
         api.perf.n++; api.perf.ms += performance.now() - t0;
         if (STATUS.erro && /403|429|quota|key|denied|permission/i.test(STATUS.erro)) throw new Error(STATUS.erro);
@@ -409,7 +434,7 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
       api.ganho = k;
     },
     desligar(err) {
-      falhou = true; mostrando = false; if (laco) cancelAnimationFrame(laco); if (s.dono === api) { scene.remove(g); s.dono = null; } cred.remove(); mostrar();
+      falhou = true; mostrando = false; carga.remove(); if (laco) cancelAnimationFrame(laco); if (s.dono === api) { scene.remove(g); s.dono = null; } cred.remove(); mostrar();
       console.warn('google3d (cena) desligado', err && err.message); aoMudar && aoMudar();
     },
   };

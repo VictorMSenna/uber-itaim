@@ -3,6 +3,7 @@
 // Round 1: white-model finish (F1), stronger readable shadows (F7), sun arc centred on the building with a
 // large radius and only above the horizon (F3/F6), draggable sun (F5), tap = that exact unit (F8),
 // hover cursor + label (F12), loop that never sleeps while there is input (F10).
+import { capacidade } from './capacidade.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import CameraControls from 'camera-controls';
@@ -85,7 +86,7 @@ export function criarCena({ container, predio, unidades, teste = false,
 
   // ---------- renderer
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'default', preserveDrawingBuffer: !!teste });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2, capacidade().dprMax)); // tier: src/capacidade.js
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;

@@ -108,11 +108,21 @@ void main(){
 // which some browsers ignore or do badly; fallback <img>.decode()); if the layer is wider than `max`, downscale on a
 // canvas with high-quality smoothing; mipmaps on (trilinear minification). INFO is shown by ?debug360=1.
 export const INFO = { tamanhos: new Set(), decodificador: null };
-async function carregaTextura(url, max, dados = false) {
-  if (dados) max = 0; // v4 packed data: never resample
+async function carregaTextura(url, max, dados = false, manterImagem = false) {
   const blob = await (await fetch(url)).blob();
   let img = null, flipY = false;
-  try { img = await createImageBitmap(blob, { imageOrientation: 'flipY', colorSpaceConversion: 'none', premultiplyAlpha: 'none' }); INFO.decodificador = 'createImageBitmap'; }
+  if (dados && max && max < 4096) { // (v4 data files are 4096 wide: only lighter tiers decode twice)
+    // v4 packed data on a lighter device (src/capacidade.js): NEAREST downscale only ('pixelated' never blends two packed
+    // values, so every pixel still decodes to a valid first/last lit minute, at half the spatial resolution)
+    try {
+      const ini = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+      const k = ini.width > max ? max / ini.width : 1, w = Math.round(ini.width * k), h = Math.round(ini.height * k); if (ini.close) ini.close();
+      img = await createImageBitmap(blob, { imageOrientation: 'flipY', colorSpaceConversion: 'none', premultiplyAlpha: 'none', resizeWidth: w, resizeHeight: h, resizeQuality: 'pixelated' });
+      INFO.decodificador = 'createImageBitmap';
+    } catch (e) { img = null; }
+  }
+  if (dados) max = 0; // never the smooth canvas resample below
+  try { if (!img) { img = await createImageBitmap(blob, { imageOrientation: 'flipY', colorSpaceConversion: 'none', premultiplyAlpha: 'none' }); INFO.decodificador = 'createImageBitmap'; } }
   catch (e) {
     const el = new Image(); el.src = URL.createObjectURL(blob);
     await el.decode(); img = el; flipY = true; INFO.decodificador = 'img.decode';
@@ -131,6 +141,11 @@ async function carregaTextura(url, max, dados = false) {
   tx.flipY = flipY; tx.colorSpace = THREE.NoColorSpace; tx.generateMipmaps = true;
   tx.minFilter = THREE.LinearMipmapLinearFilter; tx.magFilter = THREE.LinearFilter; tx.anisotropy = 4; tx.needsUpdate = true;
   if (dados) { tx.generateMipmaps = false; tx.minFilter = tx.magFilter = THREE.NearestFilter; tx.anisotropy = 1; }
+  // size kept for the shader (visTam); the CPU copy is dropped once the texture is on the GPU (it was kept twice: 13 layers
+  // of 4096 in the 360 = hundreds of MB of RAM on the phone). The window mask keeps its image (read on the CPU by the
+  // Google layer); a texture evicted from the LRU is fetched again (HTTP cache).
+  tx.userData.w = fonte.width; tx.userData.h = fonte.height;
+  if (!manterImagem) tx.onUpdate = () => { const im = tx.image; if (im && im.width) { tx.image = { width: im.width, height: im.height }; if (typeof im.close === 'function') im.close(); } tx.onUpdate = null; };
   return tx;
 }
 // v4: mean of the direct-sun term at a time of day, linear between the 15-min frames ({"HH:MM": [r,g,b]})
@@ -170,7 +185,7 @@ export class MisturaPonto {
   }
   textura(rel, dados = false) {
     if (!rel) return Promise.resolve(null);
-    if (!this.cache.has(rel)) this.cache.set(rel, carregaTextura(this.base + rel, this.max, dados));
+    if (!this.cache.has(rel)) this.cache.set(rel, carregaTextura(this.base + rel, this.max, dados, /(^|\/)fora[^/]*$/.test(rel)));
     // (B1) LRU: keep at most 9 layers of this point in memory (ceu + 2 sun + 3 lights + 3 spare)
     const v = this.cache.get(rel); this.cache.delete(rel); this.cache.set(rel, v);
     while (this.cache.size > 12) { const [k, p] = this.cache.entries().next().value; if (this.emUso && this.emUso.has(k)) break; this.cache.delete(k); p.then((t) => t && t.dispose()); }
@@ -238,7 +253,7 @@ export class MisturaPonto {
       U.tAlb.value = tDir[0]; U.tNor.value = tDir[1]; U.tVis.value = tDir[2]; U.tVis2.value = tDir[3] || PRETO;
       const empilhado = Array.isArray(pl.dir.vis.arq);
       U.nInt.value = empilhado ? Math.min(pl.dir.vis.intervalos || 2 * visArq.length, 2 * visArq.length) : 0;
-      U.visTam.value.set(tDir[2].image.width, empilhado ? tDir[2].image.height / 2 : tDir[2].image.height);
+      U.visTam.value.set(tDir[2].userData.w, empilhado ? tDir[2].userData.h / 2 : tDir[2].userData.h);
       U.gDir.value.set(...pl.dir.g);
       U.meioMin.value = pl.minutos * 2;
       // sun direction: ENU (x east, y north, z up) from az (clockwise from north) / el, then into the normal-pass frame
