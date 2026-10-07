@@ -128,7 +128,7 @@ export class MisturaPonto {
   plano({ estacao, minutos, luzes }) {
     const s = solNoInstante(this.SOL, estacao, minutos);
     const C = this.p.camadas;
-    const el = s.dia ? s.el : -12;
+    const el = Number.isFinite(s.el) ? s.el : -12; // 07/10: true elevation also below the horizon (twilight), not -12 until sunrise
     const cc = corCeu(el), cs = corSol(el);
     const lista = [];
     if (C.ceu) lista.push({ c: C.ceu, g: cc.map((x) => (x * dhiLux(el)) / LUX_W) });
@@ -164,20 +164,32 @@ export class MisturaPonto {
     }
     // partial grey-world white balance + exposure from the analytic mean (sum of layer means x gains)
     const m = pl.media, y = 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2];
-    const noite = !pl.sol.dia || pl.sol.el < 2;
-    // daylight: partial grey-world balance; night: keep most of the warm cast of the lamps (a photo would too),
-    // otherwise saturated lamp shades turn blue after the balance
-    const WB = noite ? 0.15 : 0.6;
-    U.wb.value.set(...m.map((x) => (y > 0 ? (y / Math.max(x, 1e-9)) ** WB : 1)));
-    if (noite) { // (B1) warm but not orange: balanced R/B at most 1.25, green in between (never a green cast)
-      const w = U.wb.value, c = [m[0] * w.x, m[1] * w.y, m[2] * w.z];
-      const rb = c[0] / Math.max(c[2], 1e-9);
-      if (rb > 1.25) { const k = Math.sqrt(rb / 1.25); w.x /= k; w.z *= k; c[0] /= k; c[2] *= k; }
-      const alvoG = Math.sqrt(c[0] * c[2]); if (c[1] > 0) w.y *= alvoG / c[1];
-      const yy = 0.2126 * m[0] * w.x + 0.7152 * m[1] * w.y + 0.0722 * m[2] * w.z; // keep the luminance
-      if (yy > 0) { const n = y / yy; w.multiplyScalar(n); }
-    }
-    U.expo.value = y > 0 ? Math.min(ALVO / y, noite ? 4.5 : 8) : 1; // (B1) night auto-exposure gain capped at 2.5x
+    const el = Number.isFinite(pl.sol.el) ? pl.sol.el : -12;
+    // (07/10 Victor: "ilumina de uma vez quando o sol nasce") night and day rules blend over -2..8 deg instead of a
+    // switch at 2 deg. Daylight: partial grey-world balance; night: keep most of the warm cast of the lamps (a photo
+    // would too), otherwise saturated lamp shades turn blue after the balance
+    const tDia = Math.min(1, Math.max(0, (el + 2) / 10)), kDia = tDia * tDia * (3 - 2 * tDia);
+    const balanco = (WB, noite) => {
+      const w = m.map((x) => (y > 0 ? (y / Math.max(x, 1e-9)) ** WB : 1));
+      if (noite) { // (B1) warm but not orange: balanced R/B at most 1.25, green in between (never a green cast)
+        const c = [m[0] * w[0], m[1] * w[1], m[2] * w[2]];
+        const rb = c[0] / Math.max(c[2], 1e-9);
+        if (rb > 1.25) { const k = Math.sqrt(rb / 1.25); w[0] /= k; w[2] *= k; c[0] /= k; c[2] *= k; }
+        const alvoG = Math.sqrt(c[0] * c[2]); if (c[1] > 0) w[1] *= alvoG / c[1];
+        const yy = 0.2126 * m[0] * w[0] + 0.7152 * m[1] * w[1] + 0.0722 * m[2] * w[2]; // keep the luminance
+        if (yy > 0) { const n = y / yy; for (let i = 0; i < 3; i++) w[i] *= n; }
+      }
+      return w;
+    };
+    const wN = balanco(0.15, true), wD = balanco(0.6, false);
+    U.wb.value.set(...wN.map((x, i) => x + (wD[i] - x) * kDia));
+    // exposure: night rule unchanged (gain capped at 4.5); day rule adapts only partially to a dim sky, so the room
+    // brightens with the dawn instead of being normalised to full brightness as soon as there is any daylight
+    const C = this.p.camadas;
+    const yDia = C.ceu ? (0.2126 * C.ceu.media[0] + 0.7152 * C.ceu.media[1] + 0.0722 * C.ceu.media[2]) * dhiLux(15) / LUX_W : 0;
+    const eNoite = y > 0 ? Math.min(ALVO / y, 4.5) : 1;
+    const eDia = y > 0 ? (yDia > y ? ALVO / Math.sqrt(y * yDia) : ALVO / y) : 1;
+    U.expo.value = Math.min(Math.max(eNoite, eDia), 8);
     this.r.setRenderTarget(this.rt); this.r.render(this.cena, this.cam); this.r.setRenderTarget(null);
     this.ultimo = { ...pl, expo: U.expo.value };
     return this.rt.texture;
