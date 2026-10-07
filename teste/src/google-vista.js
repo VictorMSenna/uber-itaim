@@ -9,6 +9,7 @@
 // The key is NEVER in a file: it is read from window.__G3D_KEY (injected by the test harness) or ?gkey= on the URL.
 import * as THREE from 'three';
 import { capacidade } from './capacidade.js';
+import { smooth, fatorDia, fatorLuzesNoite } from './luz-curva.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
@@ -56,6 +57,37 @@ export function matrizLocal(lat, lon, h, [dE = 0, dN = 0, dU = 0] = []) {
   return m;
 }
 
+// time-of-day light of Google's photo city, applied in every tile shader from shared uniforms (never per material)
+const LUZ_GLSL = `
+  {
+    vec3 cB = outgoingLight;
+    outgoingLight = cB * uLuz;
+    if (uNoiteG > 0.001) {
+      vec3 nB = normalize(cross(dFdx(vB5), dFdy(vB5)));
+      bool verde = cB.g > cB.r * 1.08 && cB.g > cB.b * 1.04;
+      if (!verde && abs(nB.y) < 0.5 && vB5.y > 3.5) {
+        vec3 tg = normalize(vec3(-nB.z, 0.0, nB.x));
+        float sF = dot(vB5, tg);
+        vec2 cel = vec2(floor(sF / 3.1), floor(vB5.y / 2.85));
+        vec2 f = vec2(fract(sF / 3.1), fract(vB5.y / 2.85));
+        float jan = smoothstep(0.22, 0.27, f.x) * (1.0 - smoothstep(0.73, 0.78, f.x)) * smoothstep(0.36, 0.41, f.y) * (1.0 - smoothstep(0.80, 0.85, f.y));
+        float id = g3dH21(cel + floor(nB.xz * 3.0) * 17.0 + floor(vB5.xz / 40.0) * 3.1);
+        float acesa = step(id, uFracG) * jan;
+        float lum = dot(cB, vec3(0.2126, 0.7152, 0.0722));
+        float vidro = 1.0 - smoothstep(0.18, 0.5, lum);
+        vec3 quente = mix(vec3(1.0, 0.72, 0.42), vec3(0.95, 0.9, 0.82), step(0.82, g3dH21(cel + 7.0)));
+        float forca = 0.12 + 0.88 * pow(g3dH21(cel + 3.0), 2.2);
+        outgoingLight += uNoiteG * acesa * mix(0.5, 1.0, vidro) * quente * forca * 0.85;
+      }
+    }
+  }`;
+// same curve as our city (entorno.js gradeEntorno): base grade by sun elevation + window lights at night
+function luzDaCidade(el) {
+  const e = Number.isFinite(el) ? el : -20;
+  const k = 0.04 + 0.96 * fatorDia(e), azul = smooth(-14, -3, e) * (1 - smooth(-2, 8, e)), noite = 1 - smooth(-14, -4, e);
+  const base = [1, 1, 1].map((v, i) => { let x = v; x += ([0.90, 0.95, 1.06][i] - x) * azul * 0.6; x += ([0.62, 0.74, 1.05][i] - x) * noite; return x * k; });
+  return { base, luzes: fatorLuzesNoite(e) * (1 - smooth(-7, 0, e)) };
+}
 // ---------------------------------------------------------------- shared session (ONE root tileset request per page load)
 let sessao = null;
 export const STATUS = { estado: 'parado', erro: null, raiz: 0, bytes: 0, tiles: 0 };
@@ -92,7 +124,7 @@ export function iniciarGoogle() {
       // camera (a forgotten camera keeps loading tiles for a view nobody sees) and its detail target.
       s.tomar = (quem, pai, matriz, cam, erro) => {
         if (s.dono !== quem) {
-          s._recFeito = false;
+          s._recFeito = false; if (s.recorte) s.recorte.ret.value.set(1, 1, 0, 0); // ghost box only in the outside view
           for (const c of [...tiles.cameras]) tiles.deleteCamera(c);
           tiles.setCamera(cam);
           const g = tiles.group; if (g.parent !== pai) { g.parent?.remove(g); pai.add(g); }
@@ -108,27 +140,40 @@ export function iniciarGoogle() {
       // one still needs the data ('Unsupported buffer data format'). Memory is held by the per-device budget (src/capacidade.js).
       // Clip box of OUR tower (B5 frame): Google's own mesh of the building is not drawn inside it, in both views. One set
       // of shared uniforms; uParaB5 = (ECEF -> B5) x inverse(current group world matrix), refreshed when a view takes the tiles.
-      s.recorte = { liga: { value: 0 }, min: { value: new THREE.Vector3() }, max: { value: new THREE.Vector3() }, paraB5: { value: new THREE.Matrix4() }, ecefParaB5: null };
+      // + ghost box: uRet = screen rectangle (drawing-buffer px) of our tower, uProf = its nearest view depth; Google's
+      // fragments inside the rectangle and nearer than the tower are dropped (x0 > x1 = off, e.g. in the 360)
+      s.recorte = { liga: { value: 0 }, min: { value: new THREE.Vector3() }, max: { value: new THREE.Vector3() }, paraB5: { value: new THREE.Matrix4() }, ecefParaB5: null,
+        ret: { value: new THREE.Vector4(1, 1, 0, 0) }, prof: { value: 0 },
+        luz: { value: new THREE.Vector3(1, 1, 1) }, noite: { value: 0 }, frac: { value: 0.25 } };
+      const shaderRecorte = (sh) => {
+        sh.uniforms.uRecLiga = s.recorte.liga; sh.uniforms.uRecMin = s.recorte.min; sh.uniforms.uRecMax = s.recorte.max; sh.uniforms.uParaB5 = s.recorte.paraB5;
+        sh.uniforms.uRet = s.recorte.ret; sh.uniforms.uProf = s.recorte.prof;
+        sh.uniforms.uLuz = s.recorte.luz; sh.uniforms.uNoiteG = s.recorte.noite; sh.uniforms.uFracG = s.recorte.frac;
+        sh.vertexShader = 'uniform mat4 uParaB5;\nvarying vec3 vB5;\nvarying float vProf;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvB5 = (uParaB5 * modelMatrix * vec4(transformed, 1.0)).xyz;\nvProf = -mvPosition.z;');
+        sh.fragmentShader = 'uniform float uRecLiga;\nuniform vec3 uRecMin;\nuniform vec3 uRecMax;\nuniform vec4 uRet;\nuniform float uProf;\nvarying vec3 vB5;\nvarying float vProf;\n'
+          + 'uniform vec3 uLuz;\nuniform float uNoiteG;\nuniform float uFracG;\nfloat g3dH21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }\n'
+          + sh.fragmentShader.replace('#include <opaque_fragment>', LUZ_GLSL + '\n#include <opaque_fragment>').replace('void main() {',
+          'void main() {\n  if (uRecLiga > 0.5 && all(greaterThan(vB5, uRecMin)) && all(lessThan(vB5, uRecMax))) discard;\n  if (gl_FragCoord.x > uRet.x && gl_FragCoord.x < uRet.z && gl_FragCoord.y > uRet.y && gl_FragCoord.y < uRet.w && vProf < uProf) discard;');
+      };
+      s.shaderRecorte = shaderRecorte;
       const recortar = (o) => {
         if (!o.isMesh || !o.material || o.material.__recorte) return;
         const m = o.material; m.__recorte = true;
-        m.onBeforeCompile = (sh) => {
-          sh.uniforms.uRecLiga = s.recorte.liga; sh.uniforms.uRecMin = s.recorte.min; sh.uniforms.uRecMax = s.recorte.max; sh.uniforms.uParaB5 = s.recorte.paraB5;
-          sh.vertexShader = 'uniform mat4 uParaB5;\nvarying vec3 vB5;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvB5 = (uParaB5 * modelMatrix * vec4(transformed, 1.0)).xyz;');
-          sh.fragmentShader = 'uniform float uRecLiga;\nuniform vec3 uRecMin;\nuniform vec3 uRecMax;\nvarying vec3 vB5;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (uRecLiga > 0.5 && all(greaterThan(vB5, uRecMin)) && all(lessThan(vB5, uRecMax))) discard;');
-        };
+        m.onBeforeCompile = shaderRecorte;
         m.customProgramCacheKey = () => 'g3d-recorte';
         m.needsUpdate = true;
       };
       tiles.addEventListener('load-model', (ev) => ev.scene.traverse(recortar));
+      // outside view: tiles also on layer 3 (the shadow-overlay pass of cena3d.js) and able to receive the sun's shadow map
+      tiles.addEventListener('load-model', (ev) => ev.scene.traverse((o) => { if (o.isMesh) { o.layers.enable(3); o.receiveShadow = true; o.castShadow = false; } }));
       s.atualizaRecorte = () => {
         if (!s.recorte.ecefParaB5) return;
         tiles.group.updateMatrixWorld(true);
         s.recorte.paraB5.value.copy(s.recorte.ecefParaB5).multiply(new THREE.Matrix4().copy(tiles.group.matrixWorld).invert());
       };
-      // unlit tiles: one colour multiplier for all of them, also for tiles that arrive later
-      s.pintar = (k) => { s.cor = k; tiles.group.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setRGB(k[0], k[1], k[2]); }); };
-      tiles.addEventListener('load-model', (ev) => { const k = s.cor; if (k[0] !== 1 || k[1] !== 1 || k[2] !== 1) ev.scene.traverse((o) => { if (o.isMesh && o.material && o.material.color) o.material.color.setRGB(k[0], k[1], k[2]); }); });
+      // time of day for ALL tiles (shared uniforms; per-material colour left stale tints on cached tiles = patches)
+      s.pintar = () => {};
+      s.definirLuz = (el) => { const L = luzDaCidade(el); s.recorte.luz.value.set(L.base[0], L.base[1], L.base[2]); s.recorte.noite.value = L.luzes; };
       await new Promise((ok, falha) => {
         const t = setTimeout(() => falha(new Error('timeout da raiz')), 20000);
         const aoRaiz = () => { clearTimeout(t); STATUS.raiz++; tiles.removeEventListener('load-root-tileset', aoRaiz); ok(); };
@@ -423,7 +468,7 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
           if (lote0 == null) lote0 = st.loaded;
           const feitos = st.loaded - lote0; pMax = Math.max(pMax, pend > 0 ? feitos / (feitos + pend) : 0);
           carga.querySelector('b').style.width = Math.round(4 + 96 * pMax) + '%';
-          if (pend === 0 && st.visible > 8) { mostrando = true; carga.remove(); cred.hidden = false; }
+          if (pend === 0 && st.visible > 8) { mostrando = true; carga.remove(); cred.hidden = !!api.noite; }
         }
         if (pendente()) bombear();
         api.perf.n++; api.perf.ms += performance.now() - t0;
@@ -456,11 +501,18 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
       api.preCarga = { andar, final }; bombear();
     },
     pararPreCarga() { if (api.camPre && tiles.cameras.includes(api.camPre)) tiles.deleteCamera(api.camPre); api.preCarga = null; },
+    // ghost box of our tower on screen (drawing-buffer px, y up) and its nearest view depth; null = off
+    fantasma(ret, prof) { if (ret) { s.recorte.ret.value.set(ret[0], ret[1], ret[2], ret[3]); s.recorte.prof.value = prof; } else s.recorte.ret.value.set(1, 1, 0, 0); },
+    // the shadow-overlay material drops the same fragments (no shadow painted on clipped / ghosted Google surfaces)
+    aplicarRecorte(material) { material.onBeforeCompile = s.shaderRecorte; material.customProgramCacheKey = () => 'g3d-recorte-sombra'; material.needsUpdate = true; },
+    // (kept for the API; Google now stays on at night with its own night light)
+    definirNoite(v) {
+      if (api.noite === v) return;
+      api.noite = v; g.visible = !v; cred.hidden = v || !(mostrando && !falhou);
+    },
     // daylight is baked in the tiles: darken + tint at dusk/night (materials are unlit)
     definirSol(el) {
-      const k = ganhoParaSol(el, { dia: 1, noite: 0.16 });
-      ganhoCena = k; if (s.dono === api) s.pintar(k);
-      api.ganho = k;
+      s.definirLuz(el); api.el = el;
     },
     desligar(err) {
       falhou = true; mostrando = false; carga.remove(); if (laco) cancelAnimationFrame(laco); if (s.dono === api) { scene.remove(g); s.dono = null; } cred.remove(); mostrar();

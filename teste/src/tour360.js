@@ -287,7 +287,10 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
           mat.uniforms.tM.value = e.mix.mat.uniforms.tFora.value;
           vista.definirMascara(mat.uniforms.tM.value && mat.uniforms.tM.value.image);
           const el = e.mix.ultimo && e.mix.ultimo.sol ? e.mix.ultimo.sol.el : 20;
-          mat.uniforms.ganho.value.set(...gm.ganhoParaSol(el, window.__g3dGanho));
+          // the time-of-day grade + night windows live in the tile shaders (shared with the outside view); here only the
+          // brightness match of the window (city behind glass ~1.35x, as before)
+          sess.definirLuz(el); mat.uniforms.ganho.value.setScalar((window.__g3dGanho && window.__g3dGanho.dia) || 1.35);
+          this.el = el; // night (sun below -2 deg): the window shows our render's night city, not Google's day photos
           atual = id;
         },
         antes() {
