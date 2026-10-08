@@ -34,6 +34,7 @@ const ERRO_FOTO = +(typeof location !== 'undefined' && new URLSearchParams(locat
 const FOTO_LADO = 2048; // px per cube face (90 deg): sharper than any phone screen
 const FOTO_LADO_W = capacidade().nivel === 'topo' ? 2048 : 1024; // night-windows picture (lit dots only)
 const FOTO_MIN = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfmin')) || 99999; // smallest region the splitter goes down to (?gfmin=128 tests)
+const FOTO_MB = (+(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfmb')) || (capacidade().nivel === 'topo' ? (capacidade().movel ? 900 : 1500) : 420)) * 1048576;
 const FOTO_N = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfn')) || 4; // regions per face side
 export const desligadoPorUrl = () => /[?&]google3d=0/.test(location.search);
 async function chaveDaPagina() {
@@ -380,7 +381,7 @@ export class VistaGoogle {
       F.mats = F.faces.map((f) => new THREE.Matrix4().multiplyMatrices(F.cams[f].projectionMatrix, F.cams[f].matrixWorldInverse));
       F.limpos = new Set();
       this.pronto = false; this.restauraCache();
-      { const c = this.s.tiles.lruCache; this._guardaCache(); c.minBytesSize = 0; c.unloadPercent = 1; } // shooting: drop shot regions' tiles at once
+      { const c = this.s.tiles.lruCache; this._guardaCache(); c.minBytesSize = 0; c.unloadPercent = 1; c.maxBytesSize = Math.max(c.maxBytesSize, FOTO_MB); } // shooting: bigger budget, shot regions dropped at once
     }
     if (F.feito || !F.faces.length) { if (!F.faces.length && !F.feito) { F.feito = true; } return; }
     const N = FOTO_N, L = FOTO_LADO;
