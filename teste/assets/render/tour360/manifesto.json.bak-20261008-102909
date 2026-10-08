@@ -24,8 +24,8 @@
     "abajur": {
      "arq": "entrada/abajur.webp",
      "escala": 0.0035343170166015625,
-     "gama": 3.0,
-     "kb": 3698.8,
+     "gama": 2.2,
+     "kb": 3522.9,
      "media": [
       0.000129,
       6.69e-05,
@@ -70,8 +70,8 @@
     "cozinha": {
      "arq": "entrada/cozinha.webp",
      "escala": 40.03125,
-     "gama": 3.0,
-     "kb": 2853.4,
+     "gama": 2.2,
+     "kb": 1965.0,
      "media": [
       0.3365621,
       0.2592794,
@@ -468,8 +468,8 @@
     "teto": {
      "arq": "entrada/teto.webp",
      "escala": 0.223388671875,
-     "gama": 3.0,
-     "kb": 3617.2,
+     "gama": 2.2,
+     "kb": 3389.0,
      "media": [
       0.0115737,
       0.005728,
@@ -13637,8 +13637,8 @@
     "abajur": {
      "arq": "cozinha/abajur.webp",
      "escala": 0.024938857182860374,
-     "gama": 3.0,
-     "kb": 3545.7,
+     "gama": 2.2,
+     "kb": 3091.8,
      "media": [
       0.0005304,
       0.0002762,
@@ -13683,8 +13683,8 @@
     "cozinha": {
      "arq": "cozinha/cozinha.webp",
      "escala": 40.03125,
-     "gama": 3.0,
-     "kb": 2691.7,
+     "gama": 2.2,
+     "kb": 1765.2,
      "media": [
       0.2994707,
       0.2369164,
@@ -14081,8 +14081,8 @@
     "teto": {
      "arq": "cozinha/teto.webp",
      "escala": 0.931640625,
-     "gama": 3.0,
-     "kb": 3410.4,
+     "gama": 2.2,
+     "kb": 2997.0,
      "media": [
       0.0151698,
       0.0072468,
@@ -27249,8 +27249,8 @@
     "abajur": {
      "arq": "mesa/abajur.webp",
      "escala": 0.04302978515625,
-     "gama": 3.0,
-     "kb": 3373.7,
+     "gama": 2.2,
+     "kb": 2806.9,
      "media": [
       0.0007096,
       0.0003689,
@@ -27295,8 +27295,8 @@
     "cozinha": {
      "arq": "mesa/cozinha.webp",
      "escala": 39.90625,
-     "gama": 3.0,
-     "kb": 2495.7,
+     "gama": 2.2,
+     "kb": 1549.0,
      "media": [
       0.0960228,
       0.0743817,
@@ -27693,8 +27693,8 @@
     "teto": {
      "arq": "mesa/teto.webp",
      "escala": 0.75341796875,
-     "gama": 3.0,
-     "kb": 3553.3,
+     "gama": 2.2,
+     "kb": 3102.6,
      "media": [
       0.0151681,
       0.0070162,
@@ -40862,8 +40862,8 @@
     "abajur": {
      "arq": "meio/abajur.webp",
      "escala": 0.030828749760985374,
-     "gama": 3.0,
-     "kb": 4030.4,
+     "gama": 2.2,
+     "kb": 3651.3,
      "media": [
       0.0009791,
       0.0004883,
@@ -40908,8 +40908,8 @@
     "cozinha": {
      "arq": "meio/cozinha.webp",
      "escala": 0.275634765625,
-     "gama": 3.0,
-     "kb": 4213.7,
+     "gama": 2.2,
+     "kb": 4112.3,
      "media": [
       0.0176652,
       0.0124755,
@@ -41306,8 +41306,8 @@
     "teto": {
      "arq": "meio/teto.webp",
      "escala": 1.1396484375,
-     "gama": 3.0,
-     "kb": 3720.5,
+     "gama": 2.2,
+     "kb": 3451.7,
      "media": [
       0.03639,
       0.0159242,
@@ -54474,8 +54474,8 @@
     "abajur": {
      "arq": "porta-varanda/abajur.webp",
      "escala": 0.026702880859375,
-     "gama": 3.0,
-     "kb": 3623.9,
+     "gama": 2.2,
+     "kb": 3160.3,
      "media": [
       0.0008115,
       0.0004198,
@@ -54520,8 +54520,8 @@
     "cozinha": {
      "arq": "porta-varanda/cozinha.webp",
      "escala": 0.2012939453125,
-     "gama": 3.0,
-     "kb": 3899.9,
+     "gama": 2.2,
+     "kb": 3615.2,
      "media": [
       0.0067378,
       0.0048294,
@@ -54918,8 +54918,8 @@
     "teto": {
      "arq": "porta-varanda/teto.webp",
      "escala": 1.2536972761154175,
-     "gama": 3.0,
-     "kb": 3536.2,
+     "gama": 2.2,
+     "kb": 3135.3,
      "media": [
       0.0284628,
       0.0129516,
@@ -68115,8 +68115,8 @@
     "teto": {
      "arq": "varanda/teto.webp",
      "escala": 0.22509765625,
-     "gama": 3.0,
-     "kb": 3284.1,
+     "gama": 2.2,
+     "kb": 2852.3,
      "media": [
       0.008053,
       0.0040352,
@@ -68140,8 +68140,8 @@
     "abajur": {
      "arq": "varanda/abajur.webp",
      "escala": 0.01009368896484375,
-     "gama": 3.0,
-     "kb": 2726.8,
+     "gama": 2.2,
+     "kb": 2207.6,
      "media": [
       0.0002443,
       0.0001404,
@@ -68165,8 +68165,8 @@
     "cozinha": {
      "arq": "varanda/cozinha.webp",
      "escala": 0.12359619140625,
-     "gama": 3.0,
-     "kb": 3234.3,
+     "gama": 2.2,
+     "kb": 2700.0,
      "media": [
       0.002424,
       0.0019589,

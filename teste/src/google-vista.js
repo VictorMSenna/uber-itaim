@@ -382,7 +382,7 @@ export class VistaGoogle {
       }
     }
     if (chave !== F.chave) { // new unit: a new picture (our render's city stays in the window meanwhile)
-      F.chave = chave; F.dirsVistos = this.dirs; F.matriz = this.matriz.clone(); F.faces = this.facesDaJanela(); F.i = 0; F.reg = 0; F.t0 = agora; F.feito = false; F.log = []; F.fila = null;
+      F.chave = chave; F.dirsVistos = this.dirs; F.matriz = this.matriz.clone(); F.faces = this.facesDaJanela(); F.i = 0; F.reg = 0; F.t0 = agora; F.feito = false; F.log = []; F.fila = null; F.extras = false; F.fundo = false;
       // two 2D targets per window face: A = city with neutral light, W = only the lit night windows. The tile shader is linear
       // in (uLuz, uNoiteG): any hour = A x base(hour) + W x lights(hour) in the overlay, no re-shoot when the time changes
       for (const a of F.alvos) { a.A.dispose(); a.W.dispose(); }
@@ -438,6 +438,13 @@ export class VistaGoogle {
       { const c = t.lruCache, mx = c.maxBytesSize; if (c.cachedBytes > mx * 0.7) { for (const k of [...t.cameras]) t.deleteCamera(k); c.maxBytesSize = 1; t.update(); c.maxBytesSize = mx; } } // flush only when nearly full (08/10: on 4G the full flush re-downloaded shared tiles every region)
       F.fila.shift(); F.feitosF += w * w; F.reg++; F.t0 = agora;
       if (!F.fila.length) { F.fila = null; F.reg = 0; F.i++; }
+      if (F.i >= F.faces.length && !F.extras && F.faces.length < 4) { // the unit's other points: facade neighbours + down, in the background
+        F.extras = true; const p0 = F.faces[0], viz = p0 < 2 ? [4, 5] : p0 > 3 ? [0, 1] : [];
+        const add = [...viz, 3].filter((f) => !F.faces.includes(f)).slice(0, 4 - F.faces.length);
+        const alvo = (lado) => { const c = new THREE.WebGLRenderTarget(lado, lado, { type: THREE.UnsignedByteType, generateMipmaps: false, depthBuffer: true }); c.texture.colorSpace = THREE.SRGBColorSpace; c.texture.minFilter = c.texture.magFilter = THREE.LinearFilter; return c; };
+        for (const f of add) { F.faces.push(f); F.alvos.push({ A: alvo(FOTO_LADO), W: alvo(FOTO_LADO_W) }); F.mats.push(new THREE.Matrix4().multiplyMatrices(F.cams[f].projectionMatrix, F.cams[f].matrixWorldInverse)); }
+        if (add.length) { F.fundo = true; if (!this.pronto) { this.pronto = true; this.tPronto = agora; } }
+      }
       if (F.i >= F.faces.length) { F.feito = true; cam.clearViewOffset(); if (!this.pronto) { this.pronto = true; this.tPronto = agora; } STATUS.tiles = st.visible || 0; if (capacidade().nivel === 'topo') this.restauraCache(); else this.soltaCache(); try { localStorage.removeItem('tabela3d-foto-ativa'); } catch (e) { /* ignore */ } }
     }
     this.acordar();
@@ -461,7 +468,7 @@ export class VistaGoogle {
   }
   progressoFoto(ver) {
     const el = this.carga, F = this.foto; if (!el || !F) return;
-    const mostra = ver && !F.feito;
+    const mostra = ver && !F.feito && !F.fundo; // background faces (other points) load without the bar
     if (el.hidden === mostra) el.hidden = !mostra;
     if (mostra) el.querySelector('b').style.width = Math.round(4 + 96 * F.prog) + '%';
   }

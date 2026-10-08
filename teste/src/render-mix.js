@@ -42,12 +42,13 @@ uniform float gama;
 // encoding below it and store the highlights above it logarithmically up to ymax x escala. joelho 0 = old encoding.
 uniform float joelho[7];
 uniform float joelho2[7];
+uniform float gamaL[7];
 uniform float y2[7];
 uniform float ymax[7];
 // lit walls between joelho and joelho2 (log up to y2), the lamps themselves above joelho2 (log from y2 up to ymax)
-vec3 decod(vec3 v, float kn, float kn2, float yb, float ym){
+vec3 decod(vec3 v, float kn, float kn2, float yb, float ym, float gL){
   if (kn <= 0.0) return pow(v, vec3(gama));
-  vec3 baixo = pow(min(v / kn, 1.0), vec3(gama));
+  vec3 baixo = pow(min(v / kn, 1.0), vec3(gL)); // per-layer gamma (lamps 3.0: more codes for dark surfaces)
   vec3 meio = exp(clamp(v - kn, 0.0, kn2 - kn) / (kn2 - kn) * log(yb));
   vec3 alto = yb * exp(max(v - kn2, 0.0) / (1.0 - kn2) * log(ym / yb));
   return mix(mix(baixo, meio, step(kn, v)), alto, step(kn2, v));
@@ -117,7 +118,7 @@ vec3 neutral(vec3 c){
 }
 void main(){
   vec3 s = vec3(0.0);
-  ${[0, 1, 2, 3, 4, 5, 6].map((i) => `if (g[${i}].r + g[${i}].g + g[${i}].b > 0.0) s += g[${i}] * esc[${i}] * decod(texture2D(t[${i}], vUv).rgb, joelho[${i}], joelho2[${i}], y2[${i}], ymax[${i}]);`).join('\n  ')}
+  ${[0, 1, 2, 3, 4, 5, 6].map((i) => `if (g[${i}].r + g[${i}].g + g[${i}].b > 0.0) s += g[${i}] * esc[${i}] * decod(texture2D(t[${i}], vUv).rgb, joelho[${i}], joelho2[${i}], y2[${i}], ymax[${i}], gamaL[${i}]);`).join('\n  ')}
   if (usaVis > 0.5) {
     vec3 alb = pow(texture2D(tAlb, vUv).rgb, vec3(2.2));
     vec3 n = normalize(texture2D(tNor, vUv).rgb * 2.0 - 1.0);
@@ -206,7 +207,7 @@ export class MisturaPonto {
     this.mat = new THREE.ShaderMaterial({
       vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false,
       uniforms: { t: { value: Array(7).fill(PRETO) }, g: { value: Array.from({ length: 7 }, () => new THREE.Vector3()) },
-        esc: { value: Array(7).fill(1) }, gama: { value: 2.2 }, joelho: { value: Array(7).fill(0) }, joelho2: { value: Array(7).fill(0.95) }, y2: { value: Array(7).fill(2) }, ymax: { value: Array(7).fill(4) }, wb: { value: new THREE.Vector3(1, 1, 1) }, expo: { value: 1 }, srgb: { value: half ? 0 : 1 },
+        esc: { value: Array(7).fill(1) }, gama: { value: 2.2 }, joelho: { value: Array(7).fill(0) }, joelho2: { value: Array(7).fill(0.95) }, gamaL: { value: Array(7).fill(2.2) }, y2: { value: Array(7).fill(2) }, ymax: { value: Array(7).fill(4) }, wb: { value: new THREE.Vector3(1, 1, 1) }, expo: { value: 1 }, srgb: { value: half ? 0 : 1 },
         tFora: { value: PRETO }, usaFora: { value: 0 }, fatorFora: { value: 1 },
         tAlb: { value: PRETO }, tNor: { value: PRETO }, tVis: { value: PRETO }, tVis2: { value: PRETO }, nInt: { value: 0 }, usaVis: { value: 0 }, gDir: { value: new THREE.Vector3() },
         solDir: { value: new THREE.Vector3(0, 0, 1) }, meioMin: { value: 0 }, visTam: { value: new THREE.Vector2(1, 1) }, raioVis: { value: Number.isFinite(parseFloat(new URLSearchParams(location.search).get('visr'))) ? parseFloat(new URLSearchParams(location.search).get('visr')) : (capacidade().nivel === 'topo' ? 2 : 1) }, pesoN: { value: new URLSearchParams(location.search).get('visn') === '0' ? 0 : 1 } }, // ?visr=0 = old look, ?visn=0 = no normal weight (tests)
@@ -257,19 +258,20 @@ export class MisturaPonto {
       if (fa > 0) lista.push({ c: sol[nome(ant)], g: cs.map((x) => x * gs * fa) });
       if (fb > 0) lista.push({ c: sol[nome(pos)], g: cs.map((x) => x * gs * fb) });
     }
-    for (const k of LUZES) if (luzes && luzes[k] && C[k]) lista.push({ c: C[k], g: [1, 1, 1] });
+    for (const k of LUZES) if (luzes && luzes[k] && C[k]) lista.push({ c: C[k], g: [1, 1, 1], luz: true });
     const media = [0, 0, 0];
     for (const it of lista) for (let i = 0; i < 3; i++) media[i] += it.g[i] * it.c.media[i];
     // v4: separate interior / exterior means (when every layer has them)
-    let mDentro = null, mFora = null;
+    let mDentro = null, mFora = null, mDia = null;
     if (lista.length && lista.every((it) => it.c.media_dentro && it.c.media_fora)) {
       mDentro = [0, 0, 0]; mFora = [0, 0, 0];
-      for (const it of lista) for (let i = 0; i < 3; i++) { mDentro[i] += it.g[i] * it.c.media_dentro[i]; mFora[i] += it.g[i] * it.c.media_fora[i]; }
+      mDia = [0, 0, 0];
+      for (const it of lista) for (let i = 0; i < 3; i++) { mDentro[i] += it.g[i] * it.c.media_dentro[i]; mFora[i] += it.g[i] * it.c.media_fora[i]; if (!it.luz) mDia[i] += it.g[i] * it.c.media_dentro[i]; }
       const P = this.p, md = (P.solvis_media_dentro || {})[estacao], mf = (P.solvis_media_fora || {})[estacao];
-      if (dir && md && mf) { const a = mediaVis(md, minutos), b = mediaVis(mf, minutos); for (let i = 0; i < 3; i++) { mDentro[i] += dir.g[i] * a[i]; mFora[i] += dir.g[i] * b[i]; } }
+      if (dir && md && mf) { const a = mediaVis(md, minutos), b = mediaVis(mf, minutos); for (let i = 0; i < 3; i++) { mDentro[i] += dir.g[i] * a[i]; mFora[i] += dir.g[i] * b[i]; mDia[i] += dir.g[i] * a[i]; } }
     }
     if (dir && dir.media) for (let i = 0; i < 3; i++) media[i] += dir.g[i] * dir.media[i];
-    return { lista: lista.slice(0, 7), media, mDentro, mFora, sol: s, dir, minutos };
+    return { lista: lista.slice(0, 7), media, mDentro, mFora, mDia, sol: s, dir, minutos };
   }
   async atualizar(estado) {
     const pl = this.plano(estado);
@@ -299,7 +301,7 @@ export class MisturaPonto {
       U.t.value[i] = (it && tx[i]) || PRETO;
       U.g.value[i].set(...(it ? it.g : [0, 0, 0]));
       U.esc.value[i] = it ? it.c.escala : 1;
-      U.joelho.value[i] = (it && it.c.joelho) || 0; U.joelho2.value[i] = (it && it.c.joelho2) || 0.95; U.y2.value[i] = (it && it.c.y2) || 2; U.ymax.value[i] = (it && it.c.ymax) || 4;
+      U.joelho.value[i] = (it && it.c.joelho) || 0; U.joelho2.value[i] = (it && it.c.joelho2) || 0.95; U.y2.value[i] = (it && it.c.y2) || 2; U.ymax.value[i] = (it && it.c.ymax) || 4; U.gamaL.value[i] = (it && it.c.gama) || 2.2;
     }
     // partial grey-world white balance + exposure from the analytic mean (sum of layer means x gains)
     const lum = (v) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
@@ -327,7 +329,9 @@ export class MisturaPonto {
     // brightens with the dawn instead of being normalised to full brightness as soon as there is any daylight
     const yDia = C.ceu ? (0.2126 * C.ceu.media[0] + 0.7152 * C.ceu.media[1] + 0.0722 * C.ceu.media[2]) * dhiLux(15) / LUX_W : 0;
     const eNoite = y > 0 ? Math.min(ALVO / y, 4.5) : 1;
-    const eDia = y > 0 ? (yDia > y ? ALVO / Math.sqrt(y * yDia) : ALVO / y) : 1;
+    const yD = pl.mDia ? lum(pl.mDia) : y; // day rule on daylight only: lamps on/off do not change the daytime exposure (Victor 08/10)
+    const AD = ALVO * 0.55; // day key: the look Victor preferred (lamp-on daytime, 08/10)
+    const eDia = yD > 0 ? (yDia > yD ? AD / Math.sqrt(yD * yDia) : AD / yD) : 1;
     U.expo.value = Math.min(eNoite + (eDia - eNoite) * kDia, 8); // 08/10 Victor: max() let the night rule blow out daytime rooms with the lamps off
     // v4 window: exterior exposed on its own mean (brighter key than the room, like a real-estate photo), never
     // brighter than the room exposure would make it; at night the exterior keeps the room exposure
