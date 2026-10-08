@@ -511,9 +511,11 @@ const vistaInterior = new Map(); // unit id -> last B4 viewpoint (porta/janela/v
 let historicoEmpurrado = false, entrando = false;
 function preencherBarraInterior(u) {
   const s = STATUS[u.situacao];
-  $('#ib-txt').replaceChildren(el('b', { text: `Unidade ${u.numero}` }), ` · ${u.andar}º andar · `,
-    el('span', { class: `ib-sit ${u.situacao}`, text: s.rotulo }),
-    u.preco_total != null ? el('span', { class: 'mono', text: ` · ${brl(u.preco_total).replace(',00', '')}` }) : '');
+  // phone (08/10, Victor: no truncated text, only the essentials): line 1 unit + floor, line 2 price; status as a coloured dot
+  $('#ib-txt').replaceChildren(el('span', { class: 'ib-l1' }, [el('b', { text: `Unidade ${u.numero}` }), el('span', { class: 'ib-andar', text: ` · ${u.andar}º andar` }),
+    el('span', { class: 'ib-sep', text: ' · ' }), el('span', { class: `ib-sit ${u.situacao}`, text: s.rotulo })]),
+    el('span', { class: 'ib-l2' }, [el('span', { class: 'ib-andar-c', text: `${u.andar}º andar · ` }),
+      u.preco_total != null ? el('span', { class: 'mono ib-preco', text: brl(u.preco_total).replace(',00', '') }) : '']));
   $('#ib-wa').href = linkWhatsapp(u);
   $('#int-detalhes').hidden = true;
   $('#int-det-eyebrow').textContent = `${u.andar}º andar · final ${u.final}`;
@@ -702,12 +704,12 @@ async function carregarVistaFoto() {
   box.append(svg);
   app.temFoto = true;
   app.fotoUnidades = svg.querySelectorAll('g[data-uid]').length;
-  $('#btn-vista').hidden = false;
+  $('#btn-vista').hidden = app.modo3d !== 'sem3d'; // 08/10: only when the 3D model cannot open
   aplicarFiltro();
   if (app.modo3d === 'sem3d') mostrarVista('foto');
 }
 function mostrarVista(qual) {
-  if (qual === 'foto' && !app.temFoto) return;
+  if (qual === 'foto' && (!app.temFoto || app.modo3d !== 'sem3d')) return; // 08/10 Victor: photo view only as the no-3D fallback
   app.vista = qual;
   $('#foto').hidden = qual !== 'foto';
   $('#cena').style.visibility = qual === 'foto' ? 'hidden' : 'visible';

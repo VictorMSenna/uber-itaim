@@ -429,24 +429,34 @@ body.painel-aberto .chip-lista, body.vista-foto .chip-lista { display: none; }
 #interior .t360-luzes { top: calc(env(safe-area-inset-top, 0px) + 66px); }
 #interior .t360-rot { bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); }
 @media (max-width: 760px) {
-  #interior .t360-nome { top: calc(env(safe-area-inset-top, 0px) + 150px); }
-  #interior .t360-luzes { top: calc(env(safe-area-inset-top, 0px) + 184px); flex-direction: row; flex-wrap: wrap; gap: 6px; left: 12px; right: 12px; justify-content: flex-end; }
+  #interior .t360-nome { top: calc(env(safe-area-inset-top, 0px) + 62px); left: 12px; transform: none; padding: 4px 10px; font-size: 12px; }
+  #interior .t360-luzes { top: calc(env(safe-area-inset-top, 0px) + 60px); flex-direction: row; flex-wrap: nowrap; gap: 5px; left: auto; right: 12px; justify-content: flex-end; }
+  #interior .t360-luzes button { padding: 4px 9px; font-size: 12px; }
+  #interior .t360-luzes .l-longo { display: none; } #interior .t360-luzes .l-curto { display: inline; }
   #interior .t360-luzes > * { margin: 0 !important; }
   #interior .t360-luzes button { position: static !important; flex: 0 0 auto; white-space: nowrap; transform: none !important; } /* (B1) no overlap on phones */
-  #interior .t360-rot { bottom: calc(env(safe-area-inset-bottom, 0px) + 160px); font-size: 11px; } /* orq 07/10: was over the 'segure' hint */
+  #interior .t360-rot { bottom: calc(env(safe-area-inset-bottom, 0px) + 160px); } /* discreet 'i' (08/10) */
 }
 .ver-fora { position: absolute; z-index: 30; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); background: rgba(16,18,17,.82); color: #fff; font: 700 14.5px var(--f-body); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 .ver-fora:hover { background: rgba(16,18,17,.95); }
 .ver-fora svg { width: 20px; height: 20px; }
 .int-barra { position: absolute; z-index: 20; top: calc(env(safe-area-inset-top, 0px) + 12px); right: 12px; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 999px; max-width: calc(100% - 200px); }
 .ib-txt { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.ib-txt b { font-family: var(--f-display); font-weight: 750; }
+.ib-txt b { font-family: var(--f-body); font-weight: 700; font-variant-numeric: lining-nums tabular-nums; } /* 08/10 Victor: Cormorant's old-style 135 clashed with the tour's sans */
+.ib-txt .ib-preco { margin-left: 6px; } .ib-txt .ib-preco::before { content: '\00B7  '; } .ib-txt .ib-andar-c { display: none; }
 .ib-txt .ib-sit.disponivel { color: var(--disp-txt); } .ib-txt .ib-sit.reservada { color: var(--res-txt); } .ib-txt .ib-sit.indisponivel { color: var(--texto-2); }
 .int-barra .btn-pri, .int-barra .btn-sec { min-height: 38px; padding: 0 14px; font-size: 13.5px; flex: none; }
+@media (max-width: 760px) { .linha-legal .seg, .linha-legal .lg-extra { display: none; } } /* 08/10: phone footer = company + date + legal link, never truncated */
 @media (max-width: 760px) {
-  .int-barra { top: calc(env(safe-area-inset-top, 0px) + 64px); left: 12px; right: 12px; max-width: none; border-radius: 16px; flex-wrap: wrap; padding: 8px 8px 8px 12px; }
-  .ib-txt { flex-basis: 100%; white-space: normal; font-size: 13px; }
-  .int-barra .btn-pri, .int-barra .btn-sec { flex: 1; }
+  /* 08/10 (Victor: clean phone view, the tour image matters most): ONE top row = round "ver por fora" + compact unit bar */
+  .ver-fora { min-height: 40px; width: 40px; padding: 0; justify-content: center; font-size: 0; gap: 0; }
+  .ver-fora svg { width: 20px; height: 20px; }
+  .int-barra { top: calc(env(safe-area-inset-top, 0px) + 12px); left: 60px; right: 12px; max-width: none; border-radius: 14px; flex-wrap: nowrap; gap: 6px; padding: 4px 4px 4px 10px; }
+  .ib-txt { flex: 1; display: flex; flex-direction: column; white-space: nowrap; font-size: 12px; line-height: 1.25; }
+  .ib-txt .ib-l1 { overflow: hidden; }
+  .ib-txt .ib-sep, .ib-txt .ib-sit, .ib-txt .ib-andar { display: none; } .ib-txt .ib-andar-c { display: inline; }
+  .ib-txt .ib-preco { margin: 0; font-size: 11.5px; color: var(--texto-2); } .ib-txt .ib-preco::before { content: none; }
+  .int-barra .btn-pri, .int-barra .btn-sec { flex: none; min-height: 32px; padding: 0 10px; font-size: 12.5px; }
 }
 .int-detalhes { z-index: 25; }
 .interior:has(#int-detalhes:not([hidden])) .int-barra { display: none; }
@@ -510,7 +520,7 @@ body.revisao .aviso-revisao { display: block !important; }
   </nav>
 
   <p class="linha-legal" id="linha-legal">
-    <span class="txt"><span data-cfg="imobiliaria"></span><span class="seg" data-seg="creciJ"> · CRECI-J <span data-cfg="creciJ"></span></span> · <span data-cfg="tabelaCurta"></span> · simulação ilustrativa<span id="atrib-curta" hidden> · entorno: GeoSampa/PMSP (CC BY-SA 4.0)</span></span>
+    <span class="txt"><span data-cfg="imobiliaria"></span><span class="seg" data-seg="creciJ"> · CRECI-J <span data-cfg="creciJ"></span></span> · <span data-cfg="tabelaCurta"></span><span class="lg-extra"> · simulação ilustrativa<span id="atrib-curta" hidden> · entorno: GeoSampa/PMSP (CC BY-SA 4.0)</span></span></span>
     <button type="button" id="btn-legal-2" aria-controls="legal">Informações legais</button>
   </p>
 </main>

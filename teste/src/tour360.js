@@ -22,6 +22,7 @@ export function estadoTour360() { return atual ? atual.api.estado() : null; }
 export function fecharTour360() { atual?.fechar(true); }
 
 const NOMES_LUZ = { teto: 'Spots do teto', abajur: 'Abajures', cortineiro: 'LED da cortina', cozinha: 'Luz da cozinha' };
+const CURTO_LUZ = { teto: 'Spots', abajur: 'Abajur', cortineiro: 'LED', cozinha: 'Cozinha' }; // phone labels
 const paraMundo = ([u, v, h]) => new THREE.Vector3(-v, h, u);
 
 async function criar({ container, manifesto = 'assets/render/tour360/manifesto.json', ponto, estacao = 'inverno', minutos = 900,
@@ -40,19 +41,23 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   raiz.className = 't360';
   raiz.innerHTML = `
     <canvas class="t360-cv"></canvas>
-    <div class="t360-rot">${ROTULO}</div>
+    <button type="button" class="t360-rot" aria-label="Sobre a imagem" aria-expanded="false"><span class="t360-rot-i" aria-hidden="true">i</span><span class="t360-rot-txt">${ROTULO}</span></button>
     <div class="t360-vista" hidden>Vista simulada</div>
     <div class="t360-nome"></div>
-    <div class="t360-luzes">${LUZES.filter((k) => man.pontos.some((p) => p.camadas && p.camadas[k])).map((k) => `<button data-luz="${k}" aria-pressed="false" title="${NOMES_LUZ[k]}">${NOMES_LUZ[k]}</button>`).join('')}</div>
+    <div class="t360-luzes">${LUZES.filter((k) => man.pontos.some((p) => p.camadas && p.camadas[k])).map((k) => `<button data-luz="${k}" aria-pressed="false" title="${NOMES_LUZ[k]}"><span class="l-longo">${NOMES_LUZ[k]}</span><span class="l-curto">${CURTO_LUZ[k]}</span></button>`).join('')}</div>
     <button class="t360-fechar" aria-label="Fechar">×</button>`;
   container.appendChild(raiz);
+  { const b = raiz.querySelector('.t360-rot'); let tm = 0; b.addEventListener('click', (ev) => { ev.stopPropagation(); const ab = !b.classList.contains('aberto'); b.classList.toggle('aberto', ab); b.setAttribute('aria-expanded', String(ab)); clearTimeout(tm); if (ab) tm = setTimeout(() => { b.classList.remove('aberto'); b.setAttribute('aria-expanded', 'false'); }, 6000); }); }
   if (!document.getElementById('t360-css')) {
     const css = document.createElement('style'); css.id = 't360-css';
     css.textContent = `
     .t360{position:absolute;inset:0;overflow:hidden;background:#111;touch-action:none;user-select:none;font:14px/1.3 system-ui,sans-serif}
     .t360-cv{width:100%;height:100%;display:block;cursor:grab}
     .t360-cv.arrastando{cursor:grabbing}.t360-cv.alvo{cursor:pointer}
-    .t360-rot{position:absolute;left:12px;bottom:12px;max-width:calc(100% - 24px);padding:6px 10px;border-radius:8px;background:rgba(0,0,0,.62);color:#fff;font-size:12px}
+    .t360-rot{position:absolute;left:12px;bottom:12px;display:flex;align-items:center;gap:8px;max-width:calc(100% - 24px);min-height:24px;padding:3px;border:0;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font:11px/1.3 system-ui,sans-serif;text-align:left;cursor:pointer}
+    .t360-rot-i{flex:none;width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.7);display:grid;place-items:center;font:italic 600 11px Georgia,serif}
+    .t360-rot-txt{display:none;padding-right:8px}.t360-rot.aberto{border-radius:10px;background:rgba(0,0,0,.72)}.t360-rot.aberto .t360-rot-txt{display:block}
+    .t360-luzes .l-curto{display:none}
     .t360-vista{position:absolute;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;transform:translate(-50%,-50%);pointer-events:none;white-space:nowrap}
     .t360-nome{position:absolute;left:50%;top:12px;transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.55);color:#fff}
     .t360-luzes{position:absolute;right:12px;top:56px;display:flex;flex-direction:column;gap:6px}
@@ -345,7 +350,8 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
             camera.updateMatrixWorld(true); const janela = vista.janelaNaTela(camera);
             const ve = !!janela && !andando;
             malha.visible = ve && vista.pronto; malha.position.copy(camera.position);
-            mat.uniforms.usaCubo.value = 1; mat.uniforms.tC.value = vista.foto.rt.texture; mat.uniforms.tW.value = vista.foto.rtW.texture;
+            mat.uniforms.usaCubo.value = 1; { const F = vista.foto, U = mat.uniforms; U.nF.value = F.alvos.length;
+              F.alvos.forEach((a, k) => { U['fA' + k].value = a.A.texture; U['fW' + k].value = a.W.texture; U.fM.value[k].copy(F.mats[k]); }); }
             { const L = gm.luzDaCidade(this.el); mat.uniforms.luzBase.value.set(...L.base); mat.uniforms.luzesN.value = L.luzes; } // hour of the day on the picture
             mat.uniforms.rumoB.value = ((vista.ref.rumo + ((vista.ref.ajuste && vista.ref.ajuste.rumo) || 0)) * Math.PI) / 180;
             vista.progressoFoto(ve);

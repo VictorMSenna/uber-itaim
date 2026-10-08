@@ -574,7 +574,7 @@ export function criarCena({ container, predio, unidades, teste = false,
     const objs = objsB7();
     if (b7SoSombra && objs.length === b7Marcados) return;
     b7SoSombra = true; b7Marcados = objs.length; entB7.grupo.visible = true;
-    for (const o of objs) { o.layers.set(0); for (const m of [].concat(o.material || [])) { if (m.userData.g3dCw === undefined) { m.userData.g3dCw = m.colorWrite; m.userData.g3dDw = m.depthWrite; }
+    for (const o of objs) { if (o.name === 'entorno-postes') continue; // street-lamp glows stay on over Google (08/10) o.layers.set(0); for (const m of [].concat(o.material || [])) { if (m.userData.g3dCw === undefined) { m.userData.g3dCw = m.colorWrite; m.userData.g3dDw = m.depthWrite; }
       // our GROUND (tipo 1, orthophoto) stays visible a bit behind Google's ground: it fills the holes left by ghosted buildings
       if (m.uniforms && m.uniforms.uTipo && m.uniforms.uTipo.value === 1) { m.polygonOffset = true; m.polygonOffsetFactor = 2; m.polygonOffsetUnits = 16; if (m.uniforms.uSoChao) m.uniforms.uSoChao.value = 1; continue; } // ground only (no floating roofs)
       m.colorWrite = false; m.depthWrite = false; } }
