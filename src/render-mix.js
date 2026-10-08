@@ -332,7 +332,8 @@ export class MisturaPonto {
     const eNoite = y > 0 ? Math.min(ALVO / y, 4.5) : 1;
     const yD = pl.mDia ? lum(pl.mDia) : y; // day rule on daylight only: lamps on/off do not change the daytime exposure (Victor 08/10)
     const AD = ALVO * 0.45; // day key: the look Victor preferred (lamp-on daytime, 08/10)
-    const eDia = yD > 0 ? (yDia > yD ? AD / Math.sqrt(yD * yDia) : AD / yD) : 1;
+    // cap: dark points (entrada, cozinha) looked into the sunlit room and blew the bed out (Victor 08/10); expose for the light part
+    const eDia = Math.min(yD > 0 ? (yDia > yD ? AD / Math.sqrt(yD * yDia) : AD / yD) : 1, +(new URLSearchParams(location.search).get('etop')) || 1.6);
     U.expo.value = Math.min(eNoite + (eDia - eNoite) * kDia, 8); // 08/10 Victor: max() let the night rule blow out daytime rooms with the lamps off
     // v4 window: exterior exposed on its own mean (brighter key than the room, like a real-estate photo), never
     // brighter than the room exposure would make it; at night the exterior keeps the room exposure
