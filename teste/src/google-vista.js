@@ -19,8 +19,7 @@ const DRACO = 'https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/libs/drac
 const LOGO = 'https://maps.gstatic.com/mapfiles/api-3/images/google_white5_hdpi.png';
 
 // detail level: ?gerr=<px> sets the 360 target, the outside view uses 1.25x
-// 16 px at the drawing-buffer size (= ~5 CSS px on a 3x phone): measured 07/10 to look the same as 8 on a phone screen
-// (prints/b10/g11-niveis.png) with ~half the download; zooming in still refines, since the target is in screen pixels
+// detail per device tier (src/capacidade.js): 8 px = Google's finest on computers and top phones, 24/28 on mid phones
 const ERRO_360 = (typeof location !== 'undefined' && +new URLSearchParams(location.search).get('gerr')) || capacidade().erro360;
 // ON by default (07/10); ?google3d=0 turns it off. Key: test harness (window.__G3D_KEY) or ?gkey=, else src/g3d-chave.js,
 // which only exists in the PUBLISHED copy (written by prepara_pages.py from the referrer-restricted site key)

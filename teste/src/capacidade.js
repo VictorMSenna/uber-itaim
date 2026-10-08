@@ -43,7 +43,7 @@ export function capacidade() {
   if (teto && ordem.indexOf(teto) >= 0 && ordem.indexOf(teto) < ordem.indexOf(nivel)) nivel = teto;
   if (q === 'topo' || q === 'medio' || q === 'leve' || q === 'medio-') nivel = q;
   const T = {
-    topo: { google: true, tilesMB: movel ? (ios ? 500 : 700) : 1200, erro360: 16, larguraPano: 4096, dprMax: 3, parse: movel ? 3 : 8 },
+    topo: { google: true, tilesMB: movel ? (ios ? 500 : 700) : 1200, erro360: 8, larguraPano: 4096, dprMax: 3, parse: movel ? 3 : 8 }, // Victor 07/10: computers and top phones get Google's finest detail
     medio: { google: true, tilesMB: 260, erro360: 24, larguraPano: 3072, dprMax: 2.5, parse: 2 }, // 3072: what Victor's M21s ran in the demo (2048 looked blurry)
     'medio-': { google: true, tilesMB: 200, erro360: 28, larguraPano: 2048, dprMax: 2, parse: 2 },  // after a lost GPU context at 'medio' (M21s 07/10)
     leve: { google: false, tilesMB: 0, erro360: 32, larguraPano: 2048, dprMax: 1.5, parse: 1 },
