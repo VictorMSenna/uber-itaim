@@ -137,7 +137,8 @@ void main(){
 // which some browsers ignore or do badly; fallback <img>.decode()); if the layer is wider than `max`, downscale on a
 // canvas with high-quality smoothing; mipmaps on (trilinear minification). INFO is shown by ?debug360=1.
 export const INFO = { tamanhos: new Set(), decodificador: null };
-async function carregaTextura(url, max, dados = false, manterImagem = false) {
+async function carregaTextura(url, max, dados = false, manterImagem = false, inteira = false) {
+  if (inteira) max = 0; // lamp layers (knee encoding + dither): an 8-bit canvas resize would re-quantize them into bands
   const blob = await (await fetch(url)).blob();
   let img = null, flipY = false;
   if (dados && max && max < 4096) { // (v4 data files are 4096 wide: only lighter tiers decode twice)
@@ -214,9 +215,9 @@ export class MisturaPonto {
     this.cena = new THREE.Scene(); this.cena.add(this.quad);
     this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   }
-  textura(rel, dados = false) {
+  textura(rel, dados = false, inteira = false) {
     if (!rel) return Promise.resolve(null);
-    if (!this.cache.has(rel)) this.cache.set(rel, carregaTextura(this.base + rel, this.max, dados, /(^|\/)fora[^/]*$/.test(rel)));
+    if (!this.cache.has(rel)) this.cache.set(rel, carregaTextura(this.base + rel, this.max, dados, /(^|\/)fora[^/]*$/.test(rel), inteira));
     // (B1) LRU: keep at most 9 layers of this point in memory (ceu + 2 sun + 3 lights + 3 spare)
     const v = this.cache.get(rel); this.cache.delete(rel); this.cache.set(rel, v);
     while (this.cache.size > 12) { const [k, p] = this.cache.entries().next().value; if (this.emUso && this.emUso.has(k)) break; this.cache.delete(k); p.then((t) => t && t.dispose()); }
@@ -277,7 +278,7 @@ export class MisturaPonto {
     const visArq = pl.dir ? [].concat(pl.dir.vis.arq) : [];
     const tDir = pl.dir ? await Promise.all([this.textura(C.albedo.arq), this.textura(C.normal.arq), ...visArq.map((a) => this.textura(a, true))]) : null;
     if (pl.dir) for (const a of [C.albedo.arq, C.normal.arq, ...visArq]) this.emUso.add(a);
-    const tx = await Promise.all(pl.lista.map((it) => this.textura(it.c.arq)));
+    const tx = await Promise.all(pl.lista.map((it) => this.textura(it.c.arq, false, !!it.c.joelho)));
     const U = this.mat.uniforms;
     U.usaVis.value = tDir && tDir.every(Boolean) ? 1 : 0;
     if (U.usaVis.value) {

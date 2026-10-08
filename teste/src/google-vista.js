@@ -528,6 +528,7 @@ export class VistaGoogle {
     if (this.s.dono === this) { for (const c of [...this.s.tiles.cameras]) this.s.tiles.deleteCamera(c); this.s.dono = null; }
     if (this.rt) this.rt.dispose();
     if (this.foto) { for (const a of this.foto.alvos) { a.A.dispose(); a.W.dispose(); } this.foto = null; }
+    try { localStorage.removeItem('tabela3d-foto-ativa'); } catch (e) { /* ignore */ } // leaving the 360 mid-photo is not a crash
     this.restauraCache();
     this.credito.remove(); if (this.carga) this.carga.remove();
   }

@@ -13,7 +13,7 @@ let cache = null;
 export function rebaixar() {
   const ordem = ['leve', 'medio-', 'medio', 'topo'], atual = capacidade().nivel, i = ordem.indexOf(atual);
   if (i <= 0) return false;
-  try { localStorage.setItem('tabela3d-nivel-teto-2', ordem[i - 1]); } catch (e) { return false; }
+  try { localStorage.setItem('tabela3d-nivel-teto-3', ordem[i - 1]); } catch (e) { return false; }
   return true;
 }
 export function capacidade() {
@@ -42,7 +42,7 @@ export function capacidade() {
   else if (movel && !ios && (mem <= 4 || gpuMedia)) nivel = 'medio';
   // a device that already lost its GPU context here runs one step lower (rebaixar(), stored per device). Key '-2' (08/10):
   // layers no longer keep mipmaps (less GPU memory), so devices that stepped down before get one more try at their tier
-  let teto = null; try { teto = localStorage.getItem('tabela3d-nivel-teto-2'); } catch (e) { /* private mode */ }
+  let teto = null; try { teto = localStorage.getItem('tabela3d-nivel-teto-3'); } catch (e) { /* private mode */ }
   const ordem = ['leve', 'medio-', 'medio', 'topo'];
   if (teto && ordem.indexOf(teto) >= 0 && ordem.indexOf(teto) < ordem.indexOf(nivel)) nivel = teto;
   if (q === 'topo' || q === 'medio' || q === 'leve' || q === 'medio-') nivel = q;
@@ -54,7 +54,7 @@ export function capacidade() {
   }[nivel];
   const pw = +new URLSearchParams(location.search).get('pano'); if (pw) T.larguraPano = pw; // tests
   cache = { nivel, movel, mem, gpu, maxTex, ...T, rebaixar };
-  if (caiu) { if (typeof window !== 'undefined') window.__capacidade = cache; rebaixar(); cache = null; return capacidade(); }
+  if (caiu && nivel !== 'medio-' && nivel !== 'leve') { if (typeof window !== 'undefined') window.__capacidade = cache; rebaixar(); cache = null; return capacidade(); } // never below medio- (leve = no Google)
   if (typeof window !== 'undefined') window.__capacidade = cache;
   return cache;
 }
