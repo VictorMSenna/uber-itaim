@@ -265,6 +265,7 @@ export function criarCena({ container, predio, unidades, teste = false,
   let gCena = null, torreCamada = false;
   // Victor 07/10: OUR tower and city load first; Google's city starts downloading only after the facade texture and our
   // city are on screen (or after 20 s, whichever comes first), so the phone's bandwidth goes to our model first
+  let preJanela = null; // unit whose window view should be prefetched (card open)
   let avisaNosso = null; const nossoPronto = new Promise((ok) => { avisaNosso = ok; setTimeout(ok, 20000); });
   const nossoCarregou = () => { if ((entB7.carregado || !DRONE) && (b7.fachada || !b7Ativo('fachada'))) avisaNosso(); };
   if (!/[?&]google3d=0/.test(location.search)) nossoPronto.then(() => import('./google-vista.js')).then(async (gm) => {
@@ -272,6 +273,7 @@ export function criarCena({ container, predio, unidades, teste = false,
     gCena = await gm.ligarGoogleCena({ scene, camera, renderer, ref: { lat: -23.5939395, lon: -46.6747339, h: 732.89, rumoX: 71.67 }, aoMudar: () => pedirRender(), recorte: (() => { const bx = new THREE.Box3().setFromObject(PB.grupo); bx.min.x -= 2.2; bx.min.z -= 2.2; bx.max.x += 2.2; bx.max.z += 2.2; /* 07/10: the real building's balconies stuck out of 0.8 m */ bx.min.y = 3.5 /* 07/10: keeps Google's ground around the tower (0.3 m showed our 2020 construction-site photo as a grey stain) */; bx.max.y += 3; return bx; })(),
       mostrar: () => { chao.visible = rua.visible = !entB7.carregado; if (entB7.grupo) { entB7.grupo.visible = !!entB7.carregado; if (b7SoSombra) voltaB7(); } pedirRender(); } });
     if (gCena && solEstado.ultimo) gCena.definirSol(solEstado.ultimo.el);
+    if (gCena && preJanela) gCena.preCarregar(preJanela);
   }).catch((e) => console.warn('google3d (cena) indisponivel', e && e.message));
   if (b7Ativo('fachada')) import('./predio-textura.js').then(({ texturizarPredio }) => texturizarPredio(PB, { renderer, mascara: true }).then((r) => {
     b7.fachada = true; nossoCarregou(); b7.mascara = !!(r.mascararMaterial && r.mascararMaterial(matUnidNoite)); // E5: night light only on the glass
@@ -1273,7 +1275,7 @@ export function criarCena({ container, predio, unidades, teste = false,
     solRef: () => ({ modo: solEstado.modo, ref: solEstado.ref ? Array.from(solEstado.ref) : null }),
     pontoDaUnidade, pontoDoSol, pontoDoArco, solDebug, setDeslocamento, irParaJanela, voltarDaJanela, medirEnquadramento, luminanciaMedia,
     // B10: start/stop downloading the Google city seen from inside a unit (card open -> 360 window ready sooner)
-    preCarregarJanela: (u) => gCena && gCena.preCarregar(u), pararPreCarga: () => gCena && gCena.pararPreCarga(),
+    preCarregarJanela: (u) => { preJanela = u; if (gCena) gCena.preCarregar(u); }, pararPreCarga: () => { preJanela = null; if (gCena) gCena.pararPreCarga(); }, // a card opened before Google is up is prefetched when it comes up (08/10)
     // test helper: top-down view over the tower; contorno = red outline of the B5 tower footprint, semPredio hides it
     vistaDeCima({ altura: h = 320, contorno = true, semPredio = false, raio = 0 } = {}) {
       controls.minPolarAngle = 0; controls.maxDistance = 1e4; controls.minDistance = 1;

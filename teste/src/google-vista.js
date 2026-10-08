@@ -679,6 +679,14 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
           // (on mid phones the budget fills before 'complete': it never switched - Victor 07/10 21h50)
           if (st.visible > 8 && (pend === 0 || pMax >= 0.85 || tiles.lruCache.isFull())) { mostrando = true; carga.remove(); cred.hidden = !!api.noite; }
         }
+        if (api.preFoto) { // photo prefetch: next region when the queue is empty (or after 15 s); done after the last one
+          const P = api.preFoto; P.q = pend === 0 ? P.q + 1 : 0;
+          if ((P.q >= 3 && performance.now() - P.t0 > 300) || performance.now() - P.t0 > 15000) {
+            P.reg++; P.t0 = performance.now(); P.q = 0;
+            if (P.reg >= FOTO_N * FOTO_N) { api.pararPreCarga(); } else api.passoPreFoto();
+          }
+          bombear();
+        }
         if (pendente()) bombear();
         api.perf.n++; api.perf.ms += performance.now() - t0;
         if (STATUS.erro && /403|429|quota|key|denied|permission/i.test(STATUS.erro)) throw new Error(STATUS.erro);
@@ -704,12 +712,26 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
       c.setViewOffset(W, H, 0, y0, W, hh); c.position.set(x, y, z); c.up.set(0, 1, 0);
       c.lookAt(x + f.M[1] * 100, y, z + f.M[3] * 100); c.updateProjectionMatrix(); c.updateMatrixWorld(true);
       if (s.dono !== api) return; // the 360 is open: it loads its own view
+      if (MODO_FOTO) { // photo mode: same regions + detail as the window photo, one region at a time (see antes())
+        c.fov = 95; c.aspect = 1; c.clearViewOffset(); c.updateProjectionMatrix();
+        api.preFoto = { reg: 0, t0: performance.now(), q: 0 };
+        api.preCarga = { andar, final }; api.passoPreFoto(); bombear(); return;
+      }
       if (!tiles.cameras.includes(c)) tiles.setCamera(c);
       // this view's errorTarget is 1.25x the 360's: a 1.25x resolution asks for the 360's exact level
       tiles.setResolution(c, Math.round(W * 1.25), Math.round(hh * 1.25));
       api.preCarga = { andar, final }; bombear();
     },
-    pararPreCarga() { if (api.camPre && tiles.cameras.includes(api.camPre)) tiles.deleteCamera(api.camPre); api.preCarga = null; },
+    pararPreCarga() { if (api.camPre && tiles.cameras.includes(api.camPre)) tiles.deleteCamera(api.camPre); api.preCarga = null; api.preFoto = null; },
+    // one step of the photo prefetch: region r of FOTO_N x FOTO_N, resolution scaled so this camera gets the photo's detail
+    passoPreFoto() {
+      const P = api.preFoto, c = api.camPre; if (!P || !c || s.dono !== api) return;
+      const N = FOTO_N, L = FOTO_LADO, w = L / N, x = (P.reg % N) * w, y = Math.floor(P.reg / N) * w;
+      c.setViewOffset(L, L, x, y, w, w); c.updateProjectionMatrix(); c.updateMatrixWorld(true);
+      if (!tiles.cameras.includes(c)) tiles.setCamera(c);
+      const k = (ERRO_360 * 1.25) / ERRO_FOTO;
+      tiles.setResolution(c, Math.round(w * k), Math.round(w * k));
+    },
     // building ghosts (like our city): footprint map of our city's buildings + camera and tower positions (B5 = this frame)
     terreno(tex, ext) { s.recorte.terr.value = tex; s.recorte.terrExt.value = ext; },
     mapaPredios(tex, minX, minZ, tam) { s.recorte.mapa.value = tex; s.recorte.mapaR.value.set(minX, minZ, 1 / tam, 0); },
