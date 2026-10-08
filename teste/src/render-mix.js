@@ -167,8 +167,10 @@ async function carregaTextura(url, max, dados = false, manterImagem = false) {
   }
   INFO.tamanhos.add(`${fonte.width}x${fonte.height}`);
   const tx = new THREE.Texture(fonte);
-  tx.flipY = flipY; tx.colorSpace = THREE.NoColorSpace; tx.generateMipmaps = true;
-  tx.minFilter = THREE.LinearMipmapLinearFilter; tx.magFilter = THREE.LinearFilter; tx.anisotropy = 4; tx.needsUpdate = true;
+  // 08/10 (Victor's M21s blurry: it fell to 2048 when the GPU ran out of memory): the mix samples each layer 1:1 into its
+  // render target, so layer mipmaps (+33% GPU memory each) are never read; only the window mask (sampled on screen) keeps them
+  tx.flipY = flipY; tx.colorSpace = THREE.NoColorSpace; tx.generateMipmaps = !!manterImagem;
+  tx.minFilter = manterImagem ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter; tx.magFilter = THREE.LinearFilter; tx.anisotropy = manterImagem ? 4 : 1; tx.needsUpdate = true;
   if (dados) { tx.generateMipmaps = false; tx.minFilter = tx.magFilter = THREE.NearestFilter; tx.anisotropy = 1; }
   // size kept for the shader (visTam); the CPU copy is dropped once the texture is on the GPU (it was kept twice: 13 layers
   // of 4096 in the 360 = hundreds of MB of RAM on the phone). The window mask keeps its image (read on the CPU by the
