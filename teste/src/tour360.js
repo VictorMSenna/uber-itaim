@@ -7,7 +7,7 @@
 //   definirHora(minutos) · definirEstacao(estacao) · definirLuz(nome, ligada) · irPara(id) · estadoTour360() · fecharTour360()
 // Frames: manifest points are in the plan of the unit (u, v, h metres; v toward the balcony). three.js world:
 //   X = -v, Y = h, Z = u  (pano centre = +v = -X, turning right = increasing pano u, like the Blender equirect camera).
-import { capacidade } from './capacidade.js';
+import { capacidade, rebaixar } from './capacidade.js';
 import * as THREE from 'three';
 import { SOL } from './dados-sol.js';
 import { MisturaPonto, ROTULO, LUZES, INFO } from './render-mix.js';
@@ -63,6 +63,8 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   }
   const cv = raiz.querySelector('.t360-cv');
   const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: teste });
+  // GPU ran out of memory (black screen on Victor's M21s at 3072): this device goes one level down and the page reopens here
+  cv.addEventListener('webglcontextlost', (ev) => { ev.preventDefault(); if (rebaixar()) setTimeout(() => location.reload(), 300); });
   renderer.setPixelRatio(Math.min(capacidade().dprMax, window.devicePixelRatio || 1)); // tier of this device (src/capacidade.js) // 07/10 Victor: full screen density on phones (max 3) // orq 07/10 08:4x: phones at real screen density (1.0 made a 390-px image stretched ~3x = blurry on Victor's phone); one sphere is cheap
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
@@ -284,7 +286,7 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
           const g0 = geoDoPonto(id);
           // follows the unit the client opened: final (side, xy, bearing) + floor from dados/google-geo.json; old per-point geo as fallback
           const g = g0.porUnidade ? g0 : { ...g0, h: g0.h + (andar != null && g0.andar_ref != null ? (andar - g0.andar_ref) * (g0.por_andar || 2.81) : 0) };
-          if (atual !== id) { vista.pronto = false; vista._lote = null; }
+          // switching points inside the unit keeps Google's window on (the tiles are already here: no 'reload' look)
           vista.ref = { ...g, ajuste: window.__g3dAjuste || g.ajuste };
           vista.ligaNaCena();
           mat.uniforms.tM.value = e.mix.mat.uniforms.tFora.value;

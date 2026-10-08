@@ -9,6 +9,13 @@
 //           Google detail, 360 layers at 2048, screen density up to 2
 //   leve  : 2 GB or less / old GPU: no Google city (our city only), 360 at 2048, density up to 1.5
 let cache = null;
+// the GPU context was lost (out of GPU memory): one step down for this device, remembered; returns false if already lowest
+export function rebaixar() {
+  const ordem = ['leve', 'medio-', 'medio', 'topo'], atual = capacidade().nivel, i = ordem.indexOf(atual);
+  if (i <= 0) return false;
+  try { localStorage.setItem('tabela3d-nivel-teto', ordem[i - 1]); } catch (e) { return false; }
+  return true;
+}
 export function capacidade() {
   if (cache) return cache;
   const q = new URLSearchParams(location.search).get('nivel');
@@ -30,14 +37,19 @@ export function capacidade() {
   let nivel = 'topo';
   if (movel && (mem <= 2 || maxTex < 4096)) nivel = 'leve';
   else if (movel && !ios && (mem <= 4 || gpuMedia)) nivel = 'medio';
-  if (q === 'topo' || q === 'medio' || q === 'leve') nivel = q;
+  // a device that already lost its GPU context here runs one step lower (rebaixar(), stored per device)
+  let teto = null; try { teto = localStorage.getItem('tabela3d-nivel-teto'); } catch (e) { /* private mode */ }
+  const ordem = ['leve', 'medio-', 'medio', 'topo'];
+  if (teto && ordem.indexOf(teto) >= 0 && ordem.indexOf(teto) < ordem.indexOf(nivel)) nivel = teto;
+  if (q === 'topo' || q === 'medio' || q === 'leve' || q === 'medio-') nivel = q;
   const T = {
     topo: { google: true, tilesMB: movel ? (ios ? 500 : 700) : 1200, erro360: 16, larguraPano: 4096, dprMax: 3, parse: movel ? 3 : 8 },
     medio: { google: true, tilesMB: 260, erro360: 24, larguraPano: 3072, dprMax: 2.5, parse: 2 }, // 3072: what Victor's M21s ran in the demo (2048 looked blurry)
+    'medio-': { google: true, tilesMB: 200, erro360: 28, larguraPano: 2048, dprMax: 2, parse: 2 },  // after a lost GPU context at 'medio' (M21s 07/10)
     leve: { google: false, tilesMB: 0, erro360: 32, larguraPano: 2048, dprMax: 1.5, parse: 1 },
   }[nivel];
   const pw = +new URLSearchParams(location.search).get('pano'); if (pw) T.larguraPano = pw; // tests
-  cache = { nivel, movel, mem, gpu, maxTex, ...T };
+  cache = { nivel, movel, mem, gpu, maxTex, ...T, rebaixar };
   if (typeof window !== 'undefined') window.__capacidade = cache;
   return cache;
 }

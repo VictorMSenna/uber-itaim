@@ -3,7 +3,7 @@
 // Round 1: white-model finish (F1), stronger readable shadows (F7), sun arc centred on the building with a
 // large radius and only above the horizon (F3/F6), draggable sun (F5), tap = that exact unit (F8),
 // hover cursor + label (F12), loop that never sleeps while there is input (F10).
-import { capacidade } from './capacidade.js';
+import { capacidade, rebaixar } from './capacidade.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import CameraControls from 'camera-controls';
@@ -818,7 +818,7 @@ export function criarCena({ container, predio, unidades, teste = false,
   canvas.style.cursor = 'grab';
 
   // ---------- context loss
-  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); stats.contextoPerdido = (stats.contextoPerdido || 0) + 1; });
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); stats.contextoPerdido = (stats.contextoPerdido || 0) + 1; if (!/[?&]teste=1/.test(location.search) && rebaixar()) setTimeout(() => location.reload(), 300); }); // out of GPU memory: one level down for this device
   canvas.addEventListener('webglcontextrestored', () => { stats.contextoRestaurado = (stats.contextoRestaurado || 0) + 1; renderer.shadowMap.needsUpdate = true; pedirRender(); });
 
   // ---------- sun (data from B3). F3: direction from sol.json az/el with the building north;
