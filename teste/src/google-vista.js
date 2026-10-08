@@ -30,12 +30,12 @@ const RAIO = (typeof location !== 'undefined' && +new URLSearchParams(location.s
 // ?gfoto=1 forces it (tests), ?gfoto=0 turns it off.
 const QS_FOTO = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('gfoto') : null;
 export const MODO_FOTO = QS_FOTO === '1' || (QS_FOTO !== '0' && (capacidade().movel || capacidade().nivel !== 'topo')); // every phone (Victor 08/10); computers stay live
-const ERRO_FOTO = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gferr')) || 6; // finest Google detail for the picture, every device (it is shot once); ?gferr= tests
+const ERRO_FOTO = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gferr')) || (capacidade().nivel === 'topo' ? 6 : 14); // mid phones: half the detail, much faster (Victor 08/10: 'demora uma eternidade') // finest Google detail for the picture, every device (it is shot once); ?gferr= tests
 const FOTO_LADO = capacidade().nivel === 'topo' ? 2048 : 1536; // px per 90 deg face (mid phones 1536: M21s crashed with 2048 + 3072 layers)
 const FOTO_LADO_W = capacidade().nivel === 'topo' ? 2048 : 1024; // night-windows picture (lit dots only)
 const FOTO_MIN = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfmin')) || 99999; // smallest region the splitter goes down to (?gfmin=128 tests)
 const FOTO_MB = (+(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfmb')) || (capacidade().nivel === 'topo' ? (capacidade().movel ? 900 : 1500) : capacidade().tilesMB)) * 1048576; // mid phones: no raise (M21s crashed at 420, 08/10)
-const FOTO_N = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfn')) || 4; // regions per face side
+const FOTO_N = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfn')) || (capacidade().nivel === 'topo' ? 4 : 2); // regions per face side (mid phones: 2x2 at the lower detail)
 export const desligadoPorUrl = () => /[?&]google3d=0/.test(location.search);
 async function chaveDaPagina() {
   const k = window.__G3D_KEY || new URLSearchParams(location.search).get('gkey');

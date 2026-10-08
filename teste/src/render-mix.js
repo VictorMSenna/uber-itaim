@@ -328,7 +328,7 @@ export class MisturaPonto {
     const yDia = C.ceu ? (0.2126 * C.ceu.media[0] + 0.7152 * C.ceu.media[1] + 0.0722 * C.ceu.media[2]) * dhiLux(15) / LUX_W : 0;
     const eNoite = y > 0 ? Math.min(ALVO / y, 4.5) : 1;
     const eDia = y > 0 ? (yDia > y ? ALVO / Math.sqrt(y * yDia) : ALVO / y) : 1;
-    U.expo.value = Math.min(Math.max(eNoite, eDia), 8);
+    U.expo.value = Math.min(eNoite + (eDia - eNoite) * kDia, 8); // 08/10 Victor: max() let the night rule blow out daytime rooms with the lamps off
     // v4 window: exterior exposed on its own mean (brighter key than the room, like a real-estate photo), never
     // brighter than the room exposure would make it; at night the exterior keeps the room exposure
     const tFora = C.fora ? await this.textura(C.fora.arq) : null;
