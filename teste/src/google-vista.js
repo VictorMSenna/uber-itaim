@@ -25,6 +25,13 @@ const ERRO_360 = (typeof location !== 'undefined' && +new URLSearchParams(locati
 // which only exists in the PUBLISHED copy (written by prepara_pages.py from the referrer-restricted site key)
 // radius (m) of Google's city around the camera: tiles farther than this are neither loaded nor drawn (?graio= to test)
 const RAIO = (typeof location !== 'undefined' && +new URLSearchParams(location.search).get('graio')) || 20000;
+// 08/10 PHOTO MODE for the 360 on mid phones (Victor's M21s: mushy city, a loading bar on every turn, sluggish): the window
+// view is shot ONCE per point into a cube (one face at a time, finer detail than live), then only that picture is shown.
+// ?gfoto=1 forces it (tests), ?gfoto=0 turns it off.
+const QS_FOTO = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('gfoto') : null;
+export const MODO_FOTO = QS_FOTO === '1' || (QS_FOTO !== '0' && (capacidade().movel || capacidade().nivel !== 'topo')); // every phone (Victor 08/10); computers stay live
+const ERRO_FOTO = Math.max(6, Math.round(ERRO_360 / 2));
+const FOTO_LADO = capacidade().nivel === 'topo' ? (capacidade().movel ? 1536 : 2048) : 1024; // px per cube face (90 deg)
 export const desligadoPorUrl = () => /[?&]google3d=0/.test(location.search);
 async function chaveDaPagina() {
   const k = window.__G3D_KEY || new URLSearchParams(location.search).get('gkey');
@@ -109,7 +116,7 @@ bool g3dFantasma(vec3 p) {
 }
 `;
 // same curve as our city (entorno.js gradeEntorno): base grade by sun elevation + window lights at night
-function luzDaCidade(el) {
+export function luzDaCidade(el) {
   const e = Number.isFinite(el) ? el : -20;
   const k = 0.04 + 0.96 * fatorDia(e), azul = smooth(-14, -3, e) * (1 - smooth(-2, 8, e)), noite = 1 - smooth(-14, -4, e);
   const base = [1, 1, 1].map((v, i) => { let x = v; x += ([0.90, 0.95, 1.06][i] - x) * azul * 0.6; x += ([0.62, 0.74, 1.05][i] - x) * noite; return x * k; });
@@ -152,6 +159,7 @@ export function iniciarGoogle() {
       // camera (a forgotten camera keeps loading tiles for a view nobody sees) and its detail target.
       s.tomar = (quem, pai, matriz, cam, erro) => {
         if (s.dono !== quem) {
+          if (s.dono && s.dono.restauraCache) s.dono.restauraCache(); // the 360 photo freed the tiles: the next view gets its budget back
           s._recFeito = false; if (s.recorte) s.recorte.mapaR.value.w = 0; // building ghosts only in the outside view (cena3d turns them on)
           for (const c of [...tiles.cameras]) tiles.deleteCamera(c);
           tiles.setCamera(cam);
@@ -328,6 +336,87 @@ export class VistaGoogle {
     if (st && (st.queued + st.downloading + st.parsing > 0 || this.s.tiles.loadProgress < 1)) this.acordar();
     this.atualizaCredito();
   }
+  // ---- photo mode: which cube faces see the open window (local frame), one face shot per step, re-shot when the light changes
+  facesDaJanela(cc) {
+    const out = [], d = this.dirs, v = new THREE.Vector3();
+    for (let i = 0; i < 6; i++) {
+      const cam = this.foto && this.foto.sel ? this.foto.sel[i] : cc.children[i]; cam.updateMatrixWorld(true);
+      let ve = !d;
+      if (d) for (let k = 0; k < d.length && !ve; k += 6) {
+        v.copy(this.dirParaL(d[k], d[k + 1], d[k + 2])).multiplyScalar(100).project(cam);
+        if (v.z < 1 && v.z > -1 && Math.abs(v.x) <= 1.02 && Math.abs(v.y) <= 1.02) ve = true;
+      }
+      if (ve) out.push(i);
+    }
+    return out;
+  }
+  passoFoto() {
+    if (!this.foto) {
+      // two shots per face: A = the city with neutral light, W = only the lit night windows. The tile shader is linear in
+      // (uLuz, uNoiteG), so any hour = A x base(hour) + W x lights(hour) in the overlay: no re-shoot when the time changes
+      const cubo = () => { const c = new THREE.WebGLCubeRenderTarget(FOTO_LADO, { type: THREE.UnsignedByteType, generateMipmaps: false, depthBuffer: true });
+        c.texture.colorSpace = THREE.SRGBColorSpace; c.texture.minFilter = c.texture.magFilter = THREE.LinearFilter; return c; };
+      const rt = cubo(), rtW = cubo();
+      const cc = new THREE.CubeCamera(3, RAIO, rt);
+      cc.coordinateSystem = this.r.coordinateSystem; cc.updateCoordinateSystem();
+      // the cube's own cameras use fov -90 (mirrored image): the tiles' screen-space error comes out negative and nothing loads.
+      // Tiles are SELECTED with plain +90 deg cameras looking the same way; the cube cameras only take the picture.
+      cc.updateMatrixWorld(true);
+      const sel = cc.children.map((c) => { const k = new THREE.PerspectiveCamera(90, 1, 3, RAIO); c.getWorldQuaternion(k.quaternion); k.updateMatrixWorld(true); return k; });
+      this.foto = { rt, rtW, cc, sel, chave: null, faces: [], i: 0, t0: 0, feito: false, prog: 0 };
+    }
+    const F = this.foto, ref = this.ref, agora = performance.now();
+    const chave = [ref.lat, ref.lon, ref.h, ref.rumo, ref.ajuste && ref.ajuste.rumo, this.dirs ? this.dirs.length : 0].join('|');
+    if (chave !== F.chave) { // new point / unit: a new picture (our render's city stays in the window meanwhile)
+      F.chave = chave; F.cc.updateMatrixWorld(true); F.faces = this.facesDaJanela(F.cc); F.i = 0; F.t0 = agora; F.feito = false;
+      this.pronto = false; this.restauraCache();
+    }
+    if (F.feito || !F.faces.length) { if (!F.faces.length && !F.feito) { F.feito = true; } return; }
+    const t = this.s.tiles, foto = F.cc.children[F.faces[F.i]], cam = F.sel[F.faces[F.i]];
+    this.s.tomar(this, this.s.escena, this.matriz, cam, ERRO_FOTO);
+    if (t.cameras.length !== 1 || t.cameras[0] !== cam) { for (const c of [...t.cameras]) t.deleteCamera(c); t.setCamera(cam); }
+    t.setResolution(cam, FOTO_LADO, FOTO_LADO);
+    this.s.escena.updateMatrixWorld(true);
+    t.update();
+    const st = t.stats, pend = st.queued + st.downloading + st.parsing, tempo = agora - F.t0;
+    F.prog = (F.i + (pend > 0 ? Math.min(0.9, (t.loadProgress || 0)) : 1)) / F.faces.length;
+    if ((pend === 0 && (t.loadProgress === undefined || t.loadProgress >= 1) && tempo > 250) || (t.lruCache.isFull() && tempo > 4000) || tempo > 30000) {
+      const r = this.r, cc = r.getClearColor(new THREE.Color()), ca = r.getClearAlpha(), ant = r.getRenderTarget();
+      const R = this.s.recorte, luz0 = R.luz.value.clone(), noite0 = R.noite.value;
+      R.luz.value.set(1, 1, 1); R.noite.value = 0;
+      r.setRenderTarget(F.rt, F.faces[F.i]); r.setClearColor(0x000000, 0); r.clear(); r.render(this.s.escena, foto);
+      R.luz.value.set(0, 0, 0); R.noite.value = 1;
+      r.setRenderTarget(F.rtW, F.faces[F.i]); r.clear(); r.render(this.s.escena, foto);
+      R.luz.value.copy(luz0); R.noite.value = noite0;
+      r.setRenderTarget(ant); r.setClearColor(cc, ca);
+      this.atualizaCredito();
+      F.i++; F.t0 = agora;
+      if (F.i >= F.faces.length) { F.feito = true; if (!this.pronto) { this.pronto = true; this.tPronto = agora; } STATUS.tiles = st.visible || 0; this.soltaCache(); }
+    }
+    this.acordar();
+  }
+  // mid phones: once the picture is taken the 3D tiles leave the GPU (they were most of its memory; Victor 08/10: "se a gente
+  // diminuir o consumo de memoria do google 3d da pra aumentar a resolucao do resto"). A new point loads them again (HTTP cache).
+  soltaCache() {
+    if (capacidade().nivel === 'topo') return;
+    const t = this.s.tiles, c = t.lruCache;
+    if (!this._cache0) this._cache0 = { min: c.minBytesSize, max: c.maxBytesSize, pct: c.unloadPercent };
+    for (const k of [...t.cameras]) t.deleteCamera(k);
+    c.minBytesSize = 0; c.maxBytesSize = 1; c.unloadPercent = 1;
+    t.update();
+    this._solto = true;
+  }
+  restauraCache() {
+    if (!this._cache0) return;
+    const c = this.s.tiles.lruCache; c.minBytesSize = this._cache0.min; c.maxBytesSize = this._cache0.max; c.unloadPercent = this._cache0.pct;
+    this._solto = false;
+  }
+  progressoFoto(ver) {
+    const el = this.carga, F = this.foto; if (!el || !F) return;
+    const mostra = ver && !F.feito;
+    if (el.hidden === mostra) el.hidden = !mostra;
+    if (mostra) el.querySelector('b').style.width = Math.round(4 + 96 * F.prog) + '%';
+  }
   // Discreet progress (Victor 07/10): while the window is on screen and tiles are still arriving, a thin bar fills with the
   // share of this batch already loaded; it hides ~1 s after the queue empties. Coarse tiles are already drawn meanwhile.
   // 0..1 opacity of the Google overlay (fade 0.8 s after it is ready)
@@ -388,8 +477,10 @@ export class VistaGoogle {
     this.ativo = false;
     if (this._laco) cancelAnimationFrame(this._laco);
     for (const ev of ['load-model', 'tiles-load-end', 'needs-update', 'tile-visibility-change']) this.s.tiles.removeEventListener(ev, this._aoCarregar);
-    if (this.s.dono === this) { this.s.tiles.deleteCamera(this.camSel); this.s.dono = null; }
+    if (this.s.dono === this) { for (const c of [...this.s.tiles.cameras]) this.s.tiles.deleteCamera(c); this.s.dono = null; }
     if (this.rt) this.rt.dispose();
+    if (this.foto) { this.foto.rt.dispose(); this.foto.rtW.dispose(); this.foto = null; }
+    this.restauraCache();
     this.credito.remove(); if (this.carga) this.carga.remove();
   }
 }
@@ -406,9 +497,23 @@ uniform vec3 ganho;
 uniform float forca;
 uniform vec3 ceuTopo;
 uniform vec3 ceuHoriz;
+uniform samplerCube tC;
+uniform samplerCube tW;
+uniform vec3 luzBase;
+uniform float luzesN;
+uniform float usaCubo;
+uniform float rumoB;
 void main(){
   float m = texture2D(tM, vUv).r;
-  vec4 g = texture2D(tG, gl_FragCoord.xy / res);
+  vec4 g;
+  if (usaCubo > 0.5) { // photo mode: view direction of this sphere texel (scene frame, x mirrored) -> local frame of the shot
+    float phi = vUv.x * 6.28318530718, th = 3.14159265359 * (1.0 - vUv.y);
+    vec3 d = vec3(cos(phi) * sin(th), cos(th), sin(phi) * sin(th));
+    float f = -d.x, r = -d.z;
+    vec3 L = vec3(sin(rumoB) * f + cos(rumoB) * r, d.y, -(cos(rumoB) * f - sin(rumoB) * r));
+    vec4 a = textureCube(tC, L);
+    g = vec4(a.rgb * luzBase + textureCube(tW, L).rgb * luzesN, a.a);
+  } else g = texture2D(tG, gl_FragCoord.xy / res);
   // sky where Google drew nothing (equirect: v 0.5 = horizon, 1 = zenith)
   vec3 ceu = mix(ceuHoriz, ceuTopo, smoothstep(0.5, 0.78, vUv.y));
   gl_FragColor = vec4(mix(ceu, g.rgb * ganho, g.a), m * forca);
@@ -417,7 +522,7 @@ void main(){
 export function materialSobreposicao() {
   return new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG, transparent: true, depthTest: false, depthWrite: false,
-    uniforms: { tG: { value: null }, tM: { value: null }, res: { value: new THREE.Vector2(1, 1) }, ganho: { value: new THREE.Vector3(1, 1, 1) }, forca: { value: 1 },
+    uniforms: { tG: { value: null }, tM: { value: null }, res: { value: new THREE.Vector2(1, 1) }, ganho: { value: new THREE.Vector3(1, 1, 1) }, forca: { value: 1 }, tC: { value: null }, tW: { value: null }, luzBase: { value: new THREE.Vector3(1, 1, 1) }, luzesN: { value: 0 }, usaCubo: { value: 0 }, rumoB: { value: 0 },
       ceuTopo: { value: new THREE.Vector3(0.12, 0.27, 0.6) }, ceuHoriz: { value: new THREE.Vector3(0.55, 0.66, 0.8) } },
   });
 }

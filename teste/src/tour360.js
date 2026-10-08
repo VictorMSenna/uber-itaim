@@ -31,7 +31,7 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   const PTS = Object.fromEntries(man.pontos.map((p) => [p.id, p]));
   // first view: the middle of the room facing the balcony when it has the new render (window mask = its own exposure +
   // Google city of the unit); otherwise the first point with a window mask; the manifest order last (07/10 Victor)
-  const pontoInicial = () => (man.pontos.find((p) => p.id === 'meio' && p.camadas && p.camadas.fora) || man.pontos.find((p) => p.camadas && p.camadas.fora) || man.pontos[0]).id;
+  const pontoInicial = () => (man.pontos.find((p) => p.id === 'entrada' && p.camadas && p.camadas.fora) || man.pontos.find((p) => p.camadas && p.camadas.fora) || man.pontos[0]).id; // Victor 08/10: the tour starts at the entrance
   const estado = { estacao, minutos, luzes: { ...luzes }, ponto: ponto && PTS[ponto] ? ponto : pontoInicial() };
   let G = null; // B10 (local test): optional live layer with Google Photorealistic 3D Tiles behind the `fora` window mask; null = current behaviour
 
@@ -300,6 +300,7 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
           atual = id;
         },
         antes() {
+          if (gm.MODO_FOTO) return this.antesFoto();
           let mostrar = !andando && !falhou && atual === estado.ponto && this.ativoEm(estado.ponto);
           // no window on screen (looking at a wall): no city to draw and nothing to download
           let janela = null;
@@ -332,6 +333,25 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
             if ((perf.n & 31) === 0) { const rot = raiz.querySelector('.t360-rot'); const topo = rot && rot.offsetParent ? rot.getBoundingClientRect().top : innerHeight - 120; const bb = Math.max(78, Math.round(raiz.getBoundingClientRect().bottom - topo + 6)) + 'px'; vista.credito.style.bottom = bb; vista.carga.style.bottom = bb; }
             mat.uniforms.tG.value = vista.rt.texture; mat.uniforms.res.value.copy(tam);
             const dt = performance.now() - t0; perf.n++; perf.ms += dt; perf.max = Math.max(perf.max, dt);
+            if (window.__g3d && window.__g3d.erro && /403|429|quota|key|denied|permission/i.test(window.__g3d.erro)) throw new Error(window.__g3d.erro);
+          } catch (err) { falhou = true; malha.visible = false; vista.credito.hidden = true; try { vista.liberar(); } catch (e2) { /* ignore */ } console.warn('google3d desligado', err && err.message); }
+        },
+        // photo mode (phones, 08/10): the window view is shot once per point (cube), then turning only shows that picture
+        antesFoto() {
+          const ok = !falhou && atual === estado.ponto && this.ativoEm(estado.ponto);
+          if (!ok) { malha.visible = false; vista.credito.hidden = true; vista.progressoFoto(false); return; }
+          try {
+            vista.passoFoto();
+            camera.updateMatrixWorld(true); const janela = vista.janelaNaTela(camera);
+            const ve = !!janela && !andando;
+            malha.visible = ve && vista.pronto; malha.position.copy(camera.position);
+            mat.uniforms.usaCubo.value = 1; mat.uniforms.tC.value = vista.foto.rt.texture; mat.uniforms.tW.value = vista.foto.rtW.texture;
+            { const L = gm.luzDaCidade(this.el); mat.uniforms.luzBase.value.set(...L.base); mat.uniforms.luzesN.value = L.luzes; } // hour of the day on the picture
+            mat.uniforms.rumoB.value = ((vista.ref.rumo + ((vista.ref.ajuste && vista.ref.ajuste.rumo) || 0)) * Math.PI) / 180;
+            vista.progressoFoto(ve);
+            const op = vista.opacidade(); mat.uniforms.forca.value = op; if (op < 1 && malha.visible) vista.acordar();
+            vista.credito.hidden = !malha.visible || op <= 0;
+            if ((perf.n++ & 31) === 0) { const rot = raiz.querySelector('.t360-rot'); const topo = rot && rot.offsetParent ? rot.getBoundingClientRect().top : innerHeight - 120; const bb = Math.max(78, Math.round(raiz.getBoundingClientRect().bottom - topo + 6)) + 'px'; vista.credito.style.bottom = bb; vista.carga.style.bottom = bb; }
             if (window.__g3d && window.__g3d.erro && /403|429|quota|key|denied|permission/i.test(window.__g3d.erro)) throw new Error(window.__g3d.erro);
           } catch (err) { falhou = true; malha.visible = false; vista.credito.hidden = true; try { vista.liberar(); } catch (e2) { /* ignore */ } console.warn('google3d desligado', err && err.message); }
         },
