@@ -60,8 +60,9 @@ const VERT = /* glsl */`
   attribute vec4 _centro;           // building/tree centre (x, z), radius (m, B5 frame), wall normal angle (deg x 10)
   #endif
   varying vec2 vUv; varying vec3 vB; varying vec3 vW; varying vec3 vC; varying float vAng;
+  attribute vec2 lmuv; varying vec2 vLm;   // B9: 2nd UV of the near walls (baked sky-light atlas); (0,0) elsewhere
   void main() {
-    vUv = uv;
+    vUv = uv; vLm = lmuv;
     #ifdef COM_CENTRO
     vC = _centro.xyz; vAng = _centro.w * 0.1;
     #else
@@ -92,8 +93,14 @@ const FRAG = /* glsl */`
   uniform sampler2D uRua; uniform float uRuaOn; uniform float uRuaExt;     // street-light glow map (R sodium, G LED)
   uniform vec3 uSolW; uniform float uQuente; uniform float uFrio;   // E2: sun direction (world), warm/cool amounts
   uniform vec3 uGrade; uniform float uNoite; uniform float uFrac; uniform vec3 uHaze; uniform vec3 uHazeQ; uniform float uHazeD;
-  uniform float uFant; uniform vec3 uCam; uniform vec3 uAlvo; uniform float uRaio;
-  varying vec2 vUv; varying vec3 vB; varying vec3 vW; varying vec3 vC; varying float vAng;
+  uniform float uFant; uniform vec3 uCam; uniform vec3 uAlvo; uniform float uRaio; uniform float uSoChao;
+  varying vec2 vUv; varying vec3 vB; varying vec3 vW; varying vec3 vC; varying float vAng; varying vec2 vLm;
+  // B9 (07/10): sky light baked in Cycles (AO + bounce, no sun): walls = uLmP at vLm, ground/roofs = uLmT top-down
+  // (box uLmBox = cx, cz, half). Stored as sqrt(lm / 2): walls relative to their building's mean, ground relative to open roofs. uLmK = strength (photo walls, procedural walls, ground).
+  uniform sampler2D uLmP; uniform sampler2D uLmT; uniform float uLmOn; uniform float uLmPOn; uniform vec3 uLmBox; uniform vec3 uLmK;
+  // B9: path-traced facade tiles (1 bay x 1 floor, 6 styles, 3 x 2 slots of 320 px, tile 256 + 32 px wrapped gutter)
+  uniform sampler2D uFach; uniform float uFachOn; uniform vec4 uFachMed[6]; uniform float uFachW[6];
+  float gFres = 0.0;   // B9: Schlick term of the view angle on this pixel (set in main, read by fachada())
   float h11(float x) { x = fract(floor(x) * 0.1031); x *= x + 33.33; x *= x + x; return fract(x); }   // no sin(): stable on D3D/ANGLE
   float h21(vec2 p);
   // E4: believable facade where no good photo exists - window/slab grid (same grid as the night windows: 3.1 x 2.85 m),
@@ -123,22 +130,45 @@ const FRAG = /* glsl */`
     jan = mix(jan, 1.0 - 0.85 * (1.0 - smoothstep(0.0, 0.06, f.y)), cortinaVidro);
     parede2 *= mix(0.78, 1.0, h11(seed + 11.0));             // per-building tone (photos: walls rarely look white)
     vec3 c = mix(parede2 * laje, vidro, jan);
+    float pier = 0.0;
     vec3 media = mix(parede2, vidro, mix(0.32 * (1.0 - fita) + 0.55 * fita, 0.9, cortinaVidro));
     // W-VISTA (07/10): the 2026 window clips show SP residential towers = continuous BALCONY BANDS (white slab edge, glass
     // railing, shaded recess, piers between units), not punched windows -> ~45% of the non-glass buildings use that style
     float varanda = step(0.45, h11(seed + 13.0)) * (1.0 - cortinaVidro);
     if (varanda > 0.5) {
       float wu = mix(7.0, 10.5, h11(seed + 17.0));               // unit width between piers
-      float pier = 1.0 - step(0.07, fract(s / wu));
+      pier = 1.0 - step(0.07, fract(s / wu));
       vec3 laj = parede2 * 1.06, gr = mix(parede2 * 0.78, vec3(0.20, 0.25, 0.25), 0.45), rec = mix(vidro, parede2 * 0.42, 0.35);
       float b1 = smoothstep(0.085, 0.10, f.y), b2 = smoothstep(0.39, 0.41, f.y);
       c = mix(mix(laj, gr, b1), rec, b2);
       c = mix(c, parede2 * 0.95, pier);
       media = mix(laj * 0.09 + gr * 0.31 + rec * 0.60, parede2 * 0.95, 0.07);
     }
-    if (y < 4.2) c = mix(parede * 0.55, vec3(0.12, 0.12, 0.13), 0.5);   // ground floor: shopfronts / walls in shade
     vec2 fw = vec2(abs(dot(dvx, tg)) + abs(dot(dvy, tg)), abs(dvx.y) + abs(dvy.y)) / vec2(3.1, 2.85);
-    float fz = mix(4.0, 2.4, uJanela);                         // W-VISTA 2: from inside the grid holds down to ~2.4 px per cell (mid-distance blocks)
+    float fz = mix(4.0, 2.4, uJanela);
+    if (uFachOn > 0.5) {
+      // B9: same per-building style choice as above, but the bay is a path-traced tile (recess, frames, sill, railing
+      // glass, balcony depth) instead of flat bands; the far average comes from the same tile (no pop when fading)
+      int ti = cortinaVidro > 0.5 ? 3 : varanda > 0.5 ? (h11(seed + 19.0) > 0.5 ? 4 : 5) : fita > 0.5 ? 2 : (larg < 0.24 ? 1 : 0);
+      vec2 slot = vec2(float(ti - (ti / 3) * 3), float(ti / 3));
+      vec2 AT = vec2(960.0, 640.0);
+      vec2 tuv = (slot * 320.0 + 32.0 + vec2(f.x, 1.0 - f.y) * 256.0) / AT;
+      vec2 gx = vec2(dot(dvx, tg) / 3.1, -dvx.y / 2.85) * 256.0, gy = vec2(dot(dvy, tg) / 3.1, -dvy.y / 2.85) * 256.0;
+      float esc = min(1.0, 32.0 / max(max(length(gx), length(gy)), 1e-4));   // LOD <= 5: the 32 px gutter holds
+      vec4 t = textureGrad(uFach, tuv, gx * esc / AT, gy * esc / AT);
+      // walls: the measured building colour shaded by the tile; glass: the B7-calibrated glass colour (E4b palette)
+      // modulated by the tile's own structure (frames, recess, mullions) -> same average as before, plus detail
+      vec4 mT = uFachMed[ti];
+      vec3 ct = mix(t.rgb * vidro / max(mT.rgb, vec3(0.01)), t.rgb * parede2 / 0.8, t.a);
+      ct *= mix(1.0, 0.85 + 0.3 * cortina, 1.0 - t.a);                          // curtains / lamps differ per window
+      ct = mix(ct, vec3(0.55, 0.62, 0.70), (1.0 - t.a) * (0.05 + 0.6 * gFres));   // glass mirrors the sky at grazing angles (Schlick)
+      if (varanda > 0.5) ct = mix(ct, parede2 * 0.95, pier);
+      c = ct;
+      media = mix(vidro, parede2 * uFachW[ti], mT.a);
+      if (varanda > 0.5) media = mix(media, parede2 * 0.95, 0.07);
+      fz = mix(6.0, 2.4, uJanela);                                              // tile grid fades to its average below ~5 px per bay
+    }
+    if (y < 4.2) c = mix(parede * 0.55, vec3(0.12, 0.12, 0.13), 0.5);   // ground floor: shopfronts / walls in shade                         // W-VISTA 2: from inside the grid holds down to ~2.4 px per cell (mid-distance blocks)
     float k = clamp(1.25 - max(fw.x, fw.y) * fz, 0.0, 1.0);  // grid fades to its average below ~4 px per cell (no aliasing dots)
     return mix(media, c, k);
   }
@@ -146,6 +176,10 @@ const FRAG = /* glsl */`
   float bayer(vec2 p) { vec2 q = mod(floor(p), 4.0); float b = 0.0;
     b = mod(q.x + q.y * 2.0, 4.0); return (b + mod(q.y, 2.0) * 0.5 + 0.25) / 4.5; }
   void main() {
+    // B10: under Google's city only our GROUND is drawn (fills ghosted buildings' holes); roofs and anything above the terrain go
+    if (uSoChao > 0.5) { float terr = 0.0; vec2 rq0 = (vB.xz + uRuaExt) / (2.0 * uRuaExt);
+      if (uRuaOn > 0.5 && rq0.x > 0.0 && rq0.x < 1.0 && rq0.y > 0.0 && rq0.y < 1.0) terr = texture2D(uRua, rq0).b * 60.0 - 20.0;
+      if (vB.y > terr + 1.5) discard; }
     if (uFant > 0.5 && vC.x < 9000.0) {
       // maquete: whole buildings (and trees) standing between the camera and the tower, or around the camera, are hidden
       vec2 a = uCam.xz, b = uAlvo.xz, ab = b - a;
@@ -157,6 +191,7 @@ const FRAG = /* glsl */`
     }
     vec3 dvx = dFdx(vB), dvy = dFdy(vB);            // uniform control flow (see fachada)
     vec3 nDer = normalize(cross(dvx, dvy));
+    { vec3 nWv = normalize(cross(dFdx(vW), dFdy(vW))); gFres = pow(1.0 - clamp(abs(dot(nWv, normalize(cameraPosition - vW))), 0.0, 1.0), 5.0); }
     vec2 duvx = dFdx(vUv), duvy = dFdy(vUv);         // uniform control flow (W-VISTA magnification gate)
     vec3 c; float proc = 0.0;                       // proc = 1: procedural facade (not lit by the photo -> lit here)
     if (uTipo > 2.5) { proc = 1.0;                               // far walls: real facade tile repeated every 12 m (UV from world position)
@@ -206,6 +241,19 @@ const FRAG = /* glsl */`
       float bd = min(min(dq.x, 1.0 - dq.x), min(dq.y, 1.0 - dq.y)) * 2.0 * uDetBox.z;   // metres to the box edge
       if (bd > 0.0) c = mix(c, texture2D(uDet, dq).rgb, smoothstep(0.0, 6.0, bd));
     }
+    vec3 lm = vec3(1.0);
+    if (uLmOn > 0.5) {
+      if (uTipo < 0.5 && uLmPOn > 0.5) { vec3 e = texture2D(uLmP, vLm).rgb; lm = e * e * 2.0; }
+      else if (uTipo > 0.5 && uTipo < 1.5) {
+        vec2 tq = (vB.xz - (uLmBox.xy - uLmBox.z)) / (2.0 * uLmBox.z);
+        if (tq.x > 0.0 && tq.y > 0.0 && tq.x < 1.0 && tq.y < 1.0) { vec3 e = texture2D(uLmT, tq).rgb; lm = e * e * 2.0; }
+      }
+      float kl = uTipo < 0.5 ? mix(uLmK.x, uLmK.y, proc) : uLmK.z;
+      lm = pow(max(lm, vec3(0.02)), vec3(kl));
+    }
+    if (uDbg > 6.5) { gl_FragColor = vec4(lm * 0.8, 1.0);
+      #include <colorspace_fragment>
+      return; }
     if (uDbg > 5.5) { gl_FragColor = vec4(uTipo < 0.5 ? vec3(1.0, 0.0, 0.0) : uTipo < 1.5 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0), 1.0) * (0.4 + 0.6 * proc); return; }
     if (uDbg > 4.5 && uDbg < 5.5) { gl_FragColor = vec4(fract(vC.x * 0.137), fract(vC.y * 0.211), fract(vAng / 37.0), 1.0); return; }
     if (uDbg > 3.5 && uDbg < 4.5) { gl_FragColor = vec4(fract(vB / 5.0), 1.0); return; }
@@ -235,6 +283,9 @@ const FRAG = /* glsl */`
       float recebe = max(smoothstep(0.0, 0.12, dot(nW, uSolW)), step(0.6, nW.y));   // any face the sun reaches receives the full shadow
       float sk = uSombraK * recebe * (1.0 - sombra);
       col *= mix(vec3(1.0), vec3(0.085, 0.092, 0.11), sk);  // F40 (07/10): shader factor; on screen (after haze + Neutral tone map) ~0.25-0.30 of sunlit, slightly cool
+      // B9: baked sky light. Where the live sun reaches, the sky is only part of the light -> softer (sqrt); in the live
+      // shadow, and in phones' 'pre' mode (no shadow map: sombra = 1), the full occlusion gives the depth
+      col *= mix(lm, sqrt(lm), clamp(uSombraK * recebe * sombra, 0.0, 1.0) * 0.5);
     }
     if (uNoite > 0.001) {
       vec3 n = normalize(cross(dFdx(vB), dFdy(vB)));
@@ -281,9 +332,10 @@ const FRAG = /* glsl */`
 const VERT_ARV = /* glsl */`
   #include <common>
   #include <shadowmap_pars_vertex>
-  attribute vec3 iPos; attribute vec4 iDim; attribute vec3 iCor;     // base (B5), (half width, height, variant, seed), crown colour
-  uniform vec2 uBaseFrac; uniform mat4 uB5; uniform float uAltFrame;   // B5 -> world; tree height / frame side
-  varying float vAlt;
+  attribute vec3 iPos; attribute vec4 iDim; attribute vec3 iCor;     // base (B5), (half width, height, variant + 3 x species, seed), crown colour
+  attribute vec4 iBase;                                               // B9: base fraction at 10 / 40 deg, tree height / frame side, gain
+  uniform mat4 uB5;                                                   // B5 -> world
+  varying float vAlt; varying float vGanho;
   varying vec2 vUv; varying vec3 vB; varying vec3 vW; varying vec3 vC; varying vec3 vCor; varying float vT; varying float vVar;
   void main() {
     vec4 base = uB5 * vec4(iPos, 1.0);
@@ -293,11 +345,11 @@ const VERT_ARV = /* glsl */`
     vec3 right = normalize(vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]));
     vec3 upCam = normalize(vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]));
     vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), upCam, vT));
-    float bf = mix(uBaseFrac.x, uBaseFrac.y, vT);
+    float bf = mix(iBase.x, iBase.y, vT);
     vec3 p = base.xyz + right * (uv.x - 0.5) * 2.0 * iDim.x + up * (uv.y - bf) * iDim.y;
     vec4 worldPosition = vec4(p, 1.0);
     vW = p; vB = iPos + vec3(0.0, (uv.y - bf) * iDim.y, 0.0); vC = vec3(iPos.x, iPos.z, iDim.x);
-    vUv = uv; vCor = iCor; vVar = iDim.z; vAlt = iDim.y * uAltFrame;
+    vUv = uv; vCor = iCor; vVar = iDim.z; vAlt = iDim.y * iBase.z; vGanho = iBase.w;
     vec4 mvPosition = viewMatrix * worldPosition;
     gl_Position = projectionMatrix * mvPosition;
     #include <shadowmap_vertex>
@@ -310,10 +362,13 @@ const FRAG_ARV = /* glsl */`
   uniform vec3 uGrade; uniform float uNoite; uniform vec3 uHaze; uniform float uHazeD;
   uniform sampler2D uRua; uniform float uRuaOn; uniform float uRuaExt;
   uniform float uFant; uniform vec3 uCam; uniform vec3 uAlvo; uniform float uRaio;
-  varying vec2 vUv; varying vec3 vB; varying vec3 vW; varying vec3 vC; varying vec3 vCor; varying float vT; varying float vVar; varying float vAlt;
-  vec4 amostra(float linha) { return texture2D(map, vec2((vVar + vUv.x) / 3.0, linha * 0.5 + (1.0 - vUv.y) * 0.5)); }
-  vec4 amostraB(float linha) { return texture2D(map, vec2((vVar + vUv.x) / 3.0, linha * 0.5 + (1.0 - vUv.y) * 0.5), 2.0); }   // blurred: closed crown
-  vec4 amostraC(float linha) { return texture2D(map, vec2((vVar + vUv.x) / 3.0, linha * 0.5 + (1.0 - vUv.y) * 0.5), 4.0); }   // very blurred: crown interior (alpha close)
+  varying vec2 vUv; varying vec3 vB; varying vec3 vW; varying vec3 vC; varying vec3 vCor; varying float vT; varying float vVar; varying float vAlt; varying float vGanho;
+  uniform float uLinhas;   // atlas rows: 2 (B7: one species) or 2 x species (B9)
+  vec2 celula(float linha) { float esp = floor(vVar / 3.0 + 0.001); float col = vVar - 3.0 * esp;
+    return vec2((col + vUv.x) / 3.0, (esp * 2.0 + linha + (1.0 - vUv.y)) / uLinhas); }
+  vec4 amostra(float linha) { return texture2D(map, celula(linha)); }
+  vec4 amostraB(float linha) { return texture2D(map, celula(linha), 2.0); }   // blurred: closed crown
+  vec4 amostraC(float linha) { return texture2D(map, celula(linha), 4.0); }   // very blurred: crown interior (alpha close)
   uniform vec3 uArvGanho;
   void main() {
     if (uFant > 0.5 && vAlt > 26.0) {   // maquete cut-away only for very tall trees (street trees cover the podium, as in the photos)
@@ -337,7 +392,7 @@ const FRAG_ARV = /* glsl */`
     // from the blurred crown (atlas RGB is bled under alpha 0), slightly shaded.
     vec3 lb = tx.a > 0.3 ? tx.rgb : mix(tc.rgb, tb.rgb, 0.5) * 0.8;
     vec3 tint = vCor / max(uCorMedia, vec3(1e-4)); tint /= max(dot(tint, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
-    vec3 c = lb * clamp(tint, vec3(0.8), vec3(1.25)) * uArvGanho;
+    vec3 c = lb * clamp(tint, vec3(0.8), vec3(1.25)) * uArvGanho * vGanho;
     float yc = clamp((vUv.y - 0.22) / 0.78, 0.0, 1.0);
     c *= mix(0.72, 1.18, smoothstep(0.1, 0.95, yc));   // top light: sunlit top of the crown, darker underside
     // leaf clumps (~1-2 m): the impostor's mid-scale light/dark, amplified - sunlit clump tops vs shaded gaps, like the photo
@@ -363,15 +418,22 @@ const FRAG_ARV = /* glsl */`
   }`;
 const VERT_ARV_SOMBRA = VERT_ARV.replace('#include <shadowmap_pars_vertex>', '').replace('#include <shadowmap_vertex>', '');
 const FRAG_ARV_SOMBRA = /* glsl */`
-  uniform sampler2D map; varying vec2 vUv; varying float vT; varying float vVar;
+  uniform sampler2D map; varying vec2 vUv; varying float vT; varying float vVar; uniform float uLinhas;
   varying vec3 vB; varying vec3 vW; varying vec3 vC; varying vec3 vCor;
+  vec2 celula(float linha) { float esp = floor(vVar / 3.0 + 0.001); float col = vVar - 3.0 * esp;
+    return vec2((col + vUv.x) / 3.0, (esp * 2.0 + linha + (1.0 - vUv.y)) / uLinhas); }
   void main() {
-    vec4 t0 = texture2D(map, vec2((vVar + vUv.x) / 3.0, (1.0 - vUv.y) * 0.5));
-    vec4 t1 = texture2D(map, vec2((vVar + vUv.x) / 3.0, 0.5 + (1.0 - vUv.y) * 0.5));
+    vec4 t0 = texture2D(map, celula(0.0));
+    vec4 t1 = texture2D(map, celula(1.0));
     if (mix(t0.a, t1.a, vT) < 0.45) discard;
     gl_FragColor = vec4(1.0);
   }`;
 
+// B9 strengths of the baked sky light: photo walls (the drone photos already carry some real occlusion), procedural
+// walls (no light of their own), ground/roofs (orthophoto relit: its contact shadows were removed). ?lmk=a,b,c
+const LM_K = (() => { const m = /[?&]lmk=([\d.,]+)/.exec(typeof location !== 'undefined' ? location.search : ''); const v = m ? m[1].split(',').map(Number) : [];
+  return [0, 1, 2].map((i) => (Number.isFinite(v[i]) ? v[i] : [1.0, 1.0, 1.0][i])); })();
+const B9 = (k) => !new RegExp('[?&]' + k + '=0').test(typeof location !== 'undefined' ? location.search : '');
 function material(map, tipo) {
   return new THREE.ShaderMaterial({
     lights: true,                                    // F40: gives the shader the scene's shadow maps (no lighting is used)
@@ -382,9 +444,11 @@ function material(map, tipo) {
       uSolW: { value: new THREE.Vector3(0, 1, 0) }, uQuente: { value: 0 }, uFrio: { value: 0 },
       uGrade: { value: new THREE.Vector3(1, 1, 1) }, uNoite: { value: 0 }, uFrac: { value: 0.3 },
       uHaze: { value: new THREE.Color(0xd8dde2) }, uHazeQ: { value: new THREE.Color(0xd8dde2) }, uHazeD: { value: 0.0007 },
-      uFant: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAlvo: { value: new THREE.Vector3(15, 25, 8) }, uRaio: { value: 22 },
+      uFant: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAlvo: { value: new THREE.Vector3(15, 25, 8) }, uRaio: { value: 22 }, uSoChao: { value: 0 },
       uDet: { value: null }, uDetOn: { value: 0 }, uDetBox: { value: new THREE.Vector3(15, 8, 80) },
       uRua: { value: null }, uRuaOn: { value: 0 }, uRuaExt: { value: 409.6 },
+      uLmP: { value: null }, uLmT: { value: null }, uLmOn: { value: 0 }, uLmPOn: { value: 0 }, uLmBox: { value: new THREE.Vector3(0, 0, 1) }, uLmK: { value: new THREE.Vector3(...LM_K) },
+      uFach: { value: null }, uFachOn: { value: 0 }, uFachMed: { value: Array.from({ length: 6 }, () => new THREE.Vector4(0.1, 0.1, 0.1, 0.5)) }, uFachW: { value: new Array(6).fill(1) },
     },
     vertexShader: VERT, fragmentShader: FRAG, side: THREE.FrontSide, fog: false, defines: {},
   });
@@ -398,6 +462,26 @@ function emCache(chave, fn) {
 }
 function comPrazo(p, ms, oque) {
   let t; return Promise.race([p, new Promise((_, erro) => { t = setTimeout(() => erro(new Error(`tempo esgotado (${ms / 1000} s): ${oque}`)), ms); })]).finally(() => clearTimeout(t));
+}
+function carregarDados(url, ms = 30000) {
+  // small binary side files (B9 lightmap UVs): .bin, else the same bytes as base64 in <name>.json (hosts that drop .bin)
+  return emCache('bin:' + url, () => comPrazo((async () => {
+    try { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.arrayBuffer(); }
+    catch (e) {
+      const r = await fetch(url + '.json'); if (!r.ok) throw new Error(url.split('/').pop() + ': ' + e.message);
+      const bin = atob((await r.json()).b64); const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      return u8.buffer;
+    }
+  })(), ms, url.split('/').pop()));
+}
+function carregarLinear(url, renderer, ms = 30000) {
+  // B9 lightmaps: data, not colour (no sRGB decode), no mipmaps (1 px gutters between the wall rectangles)
+  return emCache('lin:' + url, () => comPrazo(new Promise((ok, erro) => new THREE.TextureLoader().load(url, (t) => {
+    t.flipY = false; t.colorSpace = THREE.NoColorSpace; t.generateMipmaps = false;
+    t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    ok(t);
+  }, undefined, () => erro(new Error('falhou: ' + url.split('/').pop())))), ms, url.split('/').pop()));
 }
 function carregarTextura(url, renderer, ms = 30000) {
   // shared THREE.Texture per URL (each renderer uploads it once; textures are never disposed by an instance)
@@ -465,17 +549,24 @@ export function criarEntorno({ cena, renderer, modo = 'interior', T = null, hPis
   }
   cena.add(grupo);
   window.__entornoEspera = true; window.__entornoPronto = false; // test hooks (prints/fps)
-  const grande = qualidade === 'alta' || (qualidade === 'auto' && renderer.capabilities.maxTextureSize >= 4096
-    && Math.min(window.screen?.width || 0, window.screen?.height || 0) >= 700 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent));
+  // 07/10 Victor: target is a high-end phone -> 4096 whenever the GPU supports it (the 2048 retry below stays as fallback)
+  const grande = qualidade === 'alta' || (qualidade === 'auto' && renderer.capabilities.maxTextureSize >= 4096);
   const s = grande ? 4096 : 2048;
   const mats = [];
   const estado = { el: 30, t: 720, az: 0, est: 'primavera', pronto: false };
-  const api = { grupo, nota: NOTA_ENTORNO, atribuicao: ATRIBUICAO_ENTORNO, resolucao: s, atualizarHora, atualizarSol, atualizarCamera, dispose, stats: {} };
+  const api = { arvores: () => arvoresMalha, grupo, nota: NOTA_ENTORNO, atribuicao: ATRIBUICAO_ENTORNO, resolucao: s, atualizarHora, atualizarSol, atualizarCamera, dispose, stats: {} };
   api.estado = 'carregando';
   marcar(modo, 'carregando', `textura ${s}`);
   async function tentar(res, ms) {
     return Promise.all([carregarGlb('entorno.glb', ms), carregarTextura(`${BASE}paredes-${res}.webp`, renderer, ms), carregarTextura(`${BASE_TOPO}topo-${res}.webp`, renderer, ms)]);
   }
+  // B9 is for the OUTSIDE view (the window views keep their W-VISTA calibration); ?b9int=1 tries it inside too
+  const b9 = (k) => B9(k) && (modo === 'externo' || /[?&]b9int=1/.test(location.search));
+  // B9: baked sky light (lm-*.webp + wall UVs), in parallel with the near layer; failure = the old look
+  const lmProm = b9('lm') ? Promise.all([
+    emCache('json:lm', () => fetch(BASE + 'lm-b9.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })),
+    carregarLinear(`${BASE}lm-paredes-2048.webp`, renderer), carregarLinear(`${BASE}lm-topo-${s >= 4096 ? 2048 : 1024}.webp`, renderer), carregarDados(BASE + 'lm-paredes-uv.bin'),
+  ]).catch((e) => { console.warn('[B9] luz assada nao carregou:', e.message); return null; }) : Promise.resolve(null);
   api.pronto = (async () => {
     let r, res = s;
     try { r = await tentar(s, 30000); }
@@ -505,6 +596,23 @@ export function criarEntorno({ cena, renderer, modo = 'interior', T = null, hPis
       tris += o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3;
     });
     grupo.add(gltf.scene);
+    let lmOk = false;
+    try {
+      const lm = await comPrazo(lmProm, 12000, 'luz assada');
+      if (lm) {
+        const [info, tP, tT, uvBuf] = lm;
+        const uv = new Uint16Array(uvBuf);
+        gltf.scene.traverse((o) => {
+          if (!o.isMesh || !o.material.uniforms) return;
+          const tipo = o.material.uniforms.uTipo.value;
+          if (tipo === 0 && !o.geometry.attributes.lmuv && uv.length === o.geometry.attributes.position.count * 2) o.geometry.setAttribute('lmuv', new THREE.BufferAttribute(uv, 2, true));
+          if (tipo === 0 && !o.geometry.attributes.lmuv) return;
+          Object.assign(o.material.uniforms.uLmBox.value, { x: info.topo_box[0], y: info.topo_box[1], z: info.topo_box[2] });
+        });
+        for (const m of mats) { m.uniforms.uLmP.value = tP; m.uniforms.uLmT.value = tT; m.uniforms.uLmOn.value = 1; m.uniforms.uLmPOn.value = 1; m.uniforms.uLmBox.value.set(...info.topo_box); }
+        lmOk = info.versao || true;
+      }
+    } catch (e) { console.warn('[B9] luz assada ignorada:', e.message); }
     if (modo === 'externo') {
       // plinth: the LiDAR street is ~3.2 m below B5's y = 0 (base of the model); fill the gap under the tower
       const g = new THREE.BoxGeometry(31.3, 4.5, 20.4); g.translate(15.05, -2.25, 6.05);
@@ -513,7 +621,7 @@ export function criarEntorno({ cena, renderer, modo = 'interior', T = null, hPis
     }
     carregarArvores();
     carregarLonge();
-    api.stats = { triangulos: tris, textura: res, via: geo.via };
+    api.stats = { triangulos: tris, textura: res, via: geo.via, luzAssada: lmOk };
     aplicar();
     grupo.visible = true; estado.pronto = true;
     api.estado = 'ok'; marcar(modo, 'ok', `perto: ${geo.via}, textura ${res}`);
@@ -526,24 +634,34 @@ export function criarEntorno({ cena, renderer, modo = 'interior', T = null, hPis
   async function carregarArvores() {
     if (/[?&]semArvores=1/.test(location.search)) return;   // test switch (tree-pixel mask by difference)
     try {
-      const [dados, tex] = await Promise.all([
+      const [dados, arv9] = await Promise.all([
         emCache('json:arvores', () => fetch(BASE + 'arvores.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })),
-        carregarTextura(BASE + 'arvores.webp', renderer),
+        b9('arv9') ? Promise.all([emCache('json:arv9', () => fetch(BASE + 'arvores-b9.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })), carregarTextura(BASE + 'arvores-b9.webp', renderer)])
+          .catch((e) => { console.warn('[B9] arvores novas nao carregaram (fica o impostor B7):', e.message); return null; }) : null,
       ]);
       const I = dados.impostor, L = dados.arvores, n = L.length;
+      // B9: species per tree = the interior render's rule (stable hash of the index: Jacaranda ~50%, the rest split
+      // between the other Poly Haven species); each species has its own frame, base and gain (fitted to the Jacaranda's)
+      const ESP = arv9 ? arv9[0].especies : [{ altura_modelo: I.altura_modelo, raio_modelo: I.raio_modelo, lado: I.lado, base_frac: I.base_frac, ganho_rel: 1, cor_rel: [1, 1, 1] }];
+      const tex = arv9 ? arv9[1] : await carregarTextura(BASE + 'arvores.webp', renderer);   // B7 atlas only when the B9 one is missing
+      const especie = (i) => { if (ESP.length === 1) return 0; const u = ((i * 2654435761) % 4294967296) / 4294967296; return u < 0.5 ? 0 : 1 + Math.floor((u - 0.5) / 0.5 * (ESP.length - 1)) % (ESP.length - 1); };
       const q = new THREE.PlaneGeometry(1, 1); q.translate(0.5, 0.5, 0);
       const g = new THREE.InstancedBufferGeometry(); g.index = q.index; g.setAttribute('position', q.attributes.position); g.setAttribute('uv', q.attributes.uv);
-      const pos = new Float32Array(n * 3), dim = new Float32Array(n * 4), cor = new Float32Array(n * 3);
+      const pos = new Float32Array(n * 3), dim = new Float32Array(n * 4), cor = new Float32Array(n * 3), bas = new Float32Array(n * 4);
       L.forEach(([x, y, z, h, r, cr, cg, cb, v], i) => {
-        const esc = h / I.altura_modelo;                       // impostor frame side in metres for this tree
-        const largura = THREE.MathUtils.clamp(r / I.raio_modelo, esc * 0.7, esc * 1.4) * I.lado;   // E3: crown width follows the measured radius, never narrower than the impostor's own proportions (round crowns)
-        pos.set([x, y, z], i * 3); dim.set([largura / 2, esc * I.lado, v, i], i * 4); cor.set([cr, cg, cb], i * 3);
+        const k = especie(i), E = ESP[k];
+        const esc = h / E.altura_modelo;                       // impostor frame side in metres for this tree
+        const largura = THREE.MathUtils.clamp(r / E.raio_modelo, esc * 0.7, esc * 1.4) * E.lado;   // E3: crown width follows the measured radius, never narrower than the impostor's own proportions (round crowns)
+        pos.set([x, y, z], i * 3); dim.set([largura / 2, esc * E.lado, v + 3 * k, i], i * 4);
+        cor.set([cr * E.cor_rel[0], cg * E.cor_rel[1], cb * E.cor_rel[2]], i * 3);   // tint relative to THIS species' own mean colour
+        bas.set([E.base_frac[0], E.base_frac[1], E.altura_modelo / E.lado, E.ganho_rel], i * 4);
       });
       g.setAttribute('iPos', new THREE.InstancedBufferAttribute(pos, 3)); g.setAttribute('iDim', new THREE.InstancedBufferAttribute(dim, 4));
-      g.setAttribute('iCor', new THREE.InstancedBufferAttribute(cor, 3)); g.instanceCount = n;
+      g.setAttribute('iCor', new THREE.InstancedBufferAttribute(cor, 3)); g.setAttribute('iBase', new THREE.InstancedBufferAttribute(bas, 4)); g.instanceCount = n;
+      api.stats.especiesArvore = ESP.length;
       const base = material(tex, 2);                          // same grade / haze / light uniforms as the city
-      const u = Object.assign(base.uniforms, { uArvGanho: { value: new THREE.Vector3(...(I.ganho_global || [0.2, 0.2, 0.2])) }, uCorMedia: { value: new THREE.Vector3(...I.cor_media) }, uBaseFrac: { value: new THREE.Vector2(...I.base_frac) }, uAltFrame: { value: I.altura_modelo / I.lado },
-        uB5: { value: grupo.matrixWorld } });
+      const u = Object.assign(base.uniforms, { uArvGanho: { value: new THREE.Vector3(...(I.ganho_global || [0.2, 0.2, 0.2])) }, uCorMedia: { value: new THREE.Vector3(...I.cor_media) },
+        uLinhas: { value: 2 * ESP.length }, uB5: { value: grupo.matrixWorld } });
       const m = new THREE.ShaderMaterial({ lights: true, uniforms: u, vertexShader: VERT_ARV, fragmentShader: FRAG_ARV, side: THREE.DoubleSide, fog: false });
       const malha = new THREE.Mesh(g, m); malha.name = 'entorno-arvores'; malha.frustumCulled = false; malha.raycast = () => {};
       malha.matrixAutoUpdate = false; malha.matrix.identity(); malha.matrixWorldNeedsUpdate = true;   // positions come in world space (uB5)
@@ -570,6 +688,9 @@ export function criarEntorno({ cena, renderer, modo = 'interior', T = null, hPis
         const tipo = o.name.startsWith('longe-topo') ? 1 : 3;
         const m = material(tipo === 1 ? tt : tf, tipo); m.uniforms.uJanela.value = modo === 'interior' ? 1 : 0;
         m.uniforms.uLocal.value.copy(o.matrixWorld);
+        const m0 = mats[0]?.uniforms;   // B9: same baked ground map / facade tiles as the near layer
+        if (m0) for (const k of ['uLmT', 'uLmOn', 'uFach', 'uFachOn', 'uFachW']) m.uniforms[k].value = m0[k].value;
+        if (m0) { m.uniforms.uLmBox.value.copy(m0.uLmBox.value); m.uniforms.uFachMed.value = m0.uFachMed.value; }
         o.material = m; mats.push(m); o.frustumCulled = false; o.raycast = () => {}; o.matrixAutoUpdate = false;
         api.stats.triangulos += o.geometry.index.count / 3;
       });
@@ -593,7 +714,19 @@ export function criarEntorno({ cena, renderer, modo = 'interior', T = null, hPis
     window.__entornoPronto = true; window.__b7info = { ...api.stats, modo }; fimLonge(api);
   }
   const extras = [];
+  async function carregarFachadas() {
+    if (!b9('fach9')) return;
+    try {
+      const [tex, med] = await Promise.all([carregarTextura(BASE + 'fachadas-b9.webp', renderer),
+        emCache('json:fach9', () => fetch(BASE + 'fachadas-b9.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }))]);
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      const M = med.estilos.map((e) => new THREE.Vector4(...e.vidro_lin, e.mascara)), W = med.estilos.map((e) => e.parede_sombra);
+      for (const m of mats) { m.uniforms.uFach.value = tex; m.uniforms.uFachOn.value = 1; m.uniforms.uFachMed.value = M; m.uniforms.uFachW.value = W; }
+      api.stats.fachadasB9 = true;
+    } catch (e) { console.warn('[B9] fachadas nao carregaram:', e.message); }
+  }
   async function carregarNoiteEDetalhe() {
+    await carregarFachadas();
     // detail ground near the tower, street-light glow map, lamp heads, horizon glow (all small; failures are harmless)
     try {
       const [det, rua, postes] = await Promise.all([

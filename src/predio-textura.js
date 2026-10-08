@@ -40,6 +40,14 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
     try { texMasc = await new THREE.TextureLoader().loadAsync(`${BASE}predio-vidro-${s}.webp`); texMasc.flipY = false; texMasc.colorSpace = THREE.NoColorSpace; }
     catch (e) { console.warn('predio-textura: sem mascara de vidro, fica a regra do escuro', e); }
   }
+  // B9 (07/10): sky occlusion baked in Cycles with the city around (piers, slab edges, balcony undersides, lower floors
+  // next to the neighbours); optional, grey, same layout as the atlas
+  let texAo = null;
+  if (!/[?&]aoTorre=0/.test(location.search)) {
+    try { texAo = await new THREE.TextureLoader().loadAsync(`${BASE}predio-ao-b9-2048.webp`); texAo.flipY = false; texAo.colorSpace = THREE.NoColorSpace; }
+    catch (e) { console.warn('predio-textura: sem AO B9 (fica sem oclusao)', e.message || e); }
+  }
+  const AO_K = +((/[?&]aoTorreK=([\d.]+)/.exec(location.search) || [0, 0.8])[1]);
   atlas.flipY = false; atlas.colorSpace = THREE.SRGBColorSpace;
   atlas.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const U = { uNoite: { value: 0 }, uTinta: { value: 0.85 }, uCorPadrao: { value: PB.corPadrao ? PB.corPadrao.clone() : new THREE.Color('#5b6a70') } };
@@ -66,7 +74,7 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
     mat.color.set(0xffffff);
     mat.onBeforeCompile = (sh) => {
       mat.userData.compilado = true; // F45 test hook
-      Object.assign(sh.uniforms, U, { uAtlas: { value: atlas }, uRects: { value: tex }, uMascara: { value: texMasc }, uLimpa: { value: limpa } });
+      Object.assign(sh.uniforms, U, { uAtlas: { value: atlas }, uRects: { value: tex }, uMascara: { value: texMasc }, uLimpa: { value: limpa }, uAoB9: { value: texAo }, uAoK: { value: texAo ? AO_K : 0 } });
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec2 uvB; uniform sampler2D uRects; varying vec2 vUvA; varying float vTem; varying vec2 vUvB;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -79,6 +87,8 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
         .replace('#include <common>', `#include <common>
           uniform sampler2D uAtlas; uniform sampler2D uMascara; uniform float uNoite; uniform float uTinta; uniform vec3 uCorPadrao; uniform vec3 uLimpa;
           varying vec2 vUvA; varying float vTem; varying vec2 vUvB;
+          uniform sampler2D uAoB9; uniform float uAoK;
+          float aoB9() { return uAoK > 0.0 ? mix(1.0, texture2D(uAoB9, vUvA).r, uAoK) : 1.0; }   // B9
           // E5c (B1): the drone photo is too coarse up close: clean colours below ~65 m, photo above ~75 m
           float lodFoto() { return 0.0; } // Victor (07/10, real phone): the drone photo reads as stains at every distance -> clean materials always`)
         .replace('#include <color_fragment>', unid ? `
@@ -104,18 +114,19 @@ export async function texturizarPredio(PB, { renderer, qualidade = 'auto', masca
             float tr = 1.0 - step(0.008, abs(q.y - 0.86));
             float quadro = clamp(borda + mul + tr, 0.0, 1.0);
             vec3 perto = mix(mix(vec3(0.05, 0.07, 0.08), corEstado, 0.92), vec3(0.17, 0.19, 0.2), quadro);
-            diffuseColor.rgb = mix(perto, longe, lodFoto());` : `
+            diffuseColor.rgb = mix(perto, longe, lodFoto());
+            diffuseColor.rgb *= mix(1.0, aoB9(), 0.6);   // B9: lighter on the units (the status colours must read)` : `
             float vidro = 1.0 - smoothstep(0.12, 0.55, lA);
             vec3 tinta = mix(vec3(1.0), corEstado * 2.6, uTinta * mix(0.35, 1.0, vidro) * temEstado);
-            diffuseColor.rgb = tA.rgb * tinta * mix(0.55, 1.0, tA.a);`}
+            diffuseColor.rgb = tA.rgb * tinta * mix(0.55, 1.0, tA.a) * mix(1.0, aoB9(), 0.6);`}
           }` : `
           #include <color_fragment>
-          if (vTem > 0.5) { vec4 tA = texture2D(uAtlas, vUvA); diffuseColor.rgb = mix(uLimpa, tA.rgb * mix(0.55, 1.0, tA.a), lodFoto()); }`)
+          if (vTem > 0.5) { vec4 tA = texture2D(uAtlas, vUvA); diffuseColor.rgb = mix(uLimpa, tA.rgb * mix(0.55, 1.0, tA.a), lodFoto()) * aoB9(); }`)
         .replace('#include <emissivemap_fragment>', unid ? `#include <emissivemap_fragment>
           if (vTem > 0.5 && uNoite > 0.0) { float lB = dot(texture2D(uAtlas, vUvA).rgb, vec3(0.2126, 0.7152, 0.0722));
             totalEmissiveRadiance += 0.0 * lB; } // orq 07/10: no photo-based night glow (amber lines on piers/slabs)` : '#include <emissivemap_fragment>');
     };
-    mat.customProgramCacheKey = () => 'b7-predio-' + (unid ? 'u' : 'v') + (texMasc ? 'm' : '');
+    mat.customProgramCacheKey = () => 'b7-predio-' + (unid ? 'u' : 'v') + (texMasc ? 'm' : '') + (texAo ? 'a' : '');
     mat.userData.atlas = atlas; mat.userData.mascara = texMasc; // F45 test hook
     originais.push([mesh, mesh.material]);
     mesh.material = mat;

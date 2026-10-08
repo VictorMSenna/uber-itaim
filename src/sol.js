@@ -198,7 +198,10 @@ export function controleSol(rel, CFG, { compacto = false, desativado = null } = 
   let estPintada = null;
   const desligar = rel.ouvir((i) => {
     relogio.textContent = i.hora;
-    if (!sub.dataset.externo) sub.textContent = `${i.nomeEst} · ${dataBR(i.data)} · nasce ${i.nascer} · põe ${i.por}`;
+    if (!sub.dataset.externo) { // phones show the short form (Victor 08/10: no truncated text; the season is in the selector)
+      const curto = raiz.getBoundingClientRect().width < 560;
+      sub.textContent = curto ? `${dataBR(i.data)} · sol ${i.nascer}–${i.por}` : `${i.nomeEst} · ${dataBR(i.data)} · nasce ${i.nascer} · põe ${i.por}`;
+    }
     dica.hidden = i.usado;
     raiz.classList.toggle('noite', !i.dia);
     raiz.classList.toggle('andando', i.segurando);

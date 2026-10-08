@@ -3,6 +3,7 @@
 // Round 1: white-model finish (F1), stronger readable shadows (F7), sun arc centred on the building with a
 // large radius and only above the horizon (F3/F6), draggable sun (F5), tap = that exact unit (F8),
 // hover cursor + label (F12), loop that never sleeps while there is input (F10).
+import { capacidade, rebaixar } from './capacidade.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import CameraControls from 'camera-controls';
@@ -85,7 +86,7 @@ export function criarCena({ container, predio, unidades, teste = false,
 
   // ---------- renderer
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'default', preserveDrawingBuffer: !!teste });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2, capacidade().dprMax)); // tier: src/capacidade.js
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
@@ -169,6 +170,9 @@ export function criarCena({ container, predio, unidades, teste = false,
   sol.shadow.bias = -0.0008; // F40 (B7): wider shadow box
   sol.shadow.normalBias = 0.05;
   sol.shadow.intensity = LUZ.sombra;
+  // B9 (07/10): softer shadow edge (PCF radius; the city shader reads the same radius). ~0.6 m on phones (2048 map over
+  // 500 m), ~0.25 m on desktop (4096). ?sombraRaio= overrides for tests
+  sol.shadow.radius = +((/[?&]sombraRaio=([\d.]+)/.exec(location.search) || [0, mobile ? 2.5 : 2.0])[1]);
   scene.add(sol, sol.target);
 
   // ---------- materials (white-model recipe: matte light clay, thin dark edges)
@@ -252,12 +256,27 @@ export function criarCena({ container, predio, unidades, teste = false,
     import('./entorno.js').then(({ criarEntorno, gradeEntorno }) => {
       gradeFn = gradeEntorno || null; // E2: the tower follows the same twilight grade as the B7 city
       if (solEstado.ultimo && gradeFn) pedirRender();
-      entB7 = criarEntorno({ cena: scene, renderer, modo: 'externo', alvo: new THREE.Vector3(CX, TOPO * 0.45, CZ), aoCarregar: () => { entB7.carregado = true; chao.visible = rua.visible = false; if (entorno) entorno.visible = entornoFantasma.visible = false; pedirRender(); } });
+      entB7 = criarEntorno({ cena: scene, renderer, modo: 'externo', alvo: new THREE.Vector3(CX, TOPO * 0.45, CZ), aoCarregar: () => { entB7.carregado = true; chao.visible = rua.visible = false; if (entorno) entorno.visible = entornoFantasma.visible = false; pedirRender(); setTimeout(() => nossoCarregou(), 0); } });
     }).catch((e) => console.error('B7 entorno', e));
   }
   const b7 = { fachada: false };
+  // B10 (local test, opt-in ?google3d=1 + key injected at runtime): Google Photorealistic 3D Tiles as the city. The tower (PB) stays on
+  // top untouched; the B7 city + B9 bake are hidden only while Google's tiles are really on screen and come back on any failure.
+  let gCena = null, torreCamada = false;
+  // Victor 07/10: OUR tower and city load first; Google's city starts downloading only after the facade texture and our
+  // city are on screen (or after 20 s, whichever comes first), so the phone's bandwidth goes to our model first
+  let preJanela = null; // unit whose window view should be prefetched (card open)
+  let avisaNosso = null; const nossoPronto = new Promise((ok) => { avisaNosso = ok; setTimeout(ok, 20000); });
+  const nossoCarregou = () => { if ((entB7.carregado || !DRONE) && (b7.fachada || !b7Ativo('fachada'))) avisaNosso(); };
+  if (!/[?&]google3d=0/.test(location.search)) nossoPronto.then(() => import('./google-vista.js')).then(async (gm) => {
+    // origin of the B5 plan (sidewalk NW corner, y = 0): LiDAR-registered (b7 quadro.py); h = LiDAR 736.39 m + geoid N (-3.5 m, calibrated in RELATORIO-B10)
+    gCena = await gm.ligarGoogleCena({ scene, camera, renderer, ref: { lat: -23.5939395, lon: -46.6747339, h: 732.89, rumoX: 71.67 }, aoMudar: () => pedirRender(), recorte: (() => { const bx = new THREE.Box3().setFromObject(PB.grupo); bx.min.x -= 2.2; bx.min.z -= 2.2; bx.max.x += 2.2; bx.max.z += 2.2; /* 07/10: the real building's balconies stuck out of 0.8 m */ bx.min.y = 3.5 /* 07/10: keeps Google's ground around the tower (0.3 m showed our 2020 construction-site photo as a grey stain) */; bx.max.y += 3; return bx; })(),
+      mostrar: () => { chao.visible = rua.visible = !entB7.carregado; if (entB7.grupo) { entB7.grupo.visible = !!entB7.carregado; if (b7SoSombra) voltaB7(); } pedirRender(); } });
+    if (gCena && solEstado.ultimo) gCena.definirSol(solEstado.ultimo.el);
+    if (gCena && preJanela) gCena.preCarregar(preJanela);
+  }).catch((e) => console.warn('google3d (cena) indisponivel', e && e.message));
   if (b7Ativo('fachada')) import('./predio-textura.js').then(({ texturizarPredio }) => texturizarPredio(PB, { renderer, mascara: true }).then((r) => {
-    b7.fachada = true; b7.mascara = !!(r.mascararMaterial && r.mascararMaterial(matUnidNoite)); // E5: night light only on the glass
+    b7.fachada = true; nossoCarregou(); b7.mascara = !!(r.mascararMaterial && r.mascararMaterial(matUnidNoite)); // E5: night light only on the glass
     if (b7.mascara) { const mascara = matUnidNoite.onBeforeCompile; matUnidNoite.onBeforeCompile = (sh) => { fachadaNoite(sh); mascara(sh); }; matUnidNoite.customProgramCacheKey = () => 'unid-noite-fachada-mascara'; matUnidNoite.needsUpdate = true; } // 07/10: keep the facade-only rule (mascararMaterial replaced it)
     // F30: compile the new programs now (facade + masked night light), not at the first dusk of a drag
     const v = meshNoite.visible; meshNoite.visible = true;
@@ -544,11 +563,107 @@ export function criarCena({ container, predio, unidades, teste = false,
   }
   ceuFisico.visible = false;
   scene.add(ceuFisico);
+  // B10 shadows with Google's city: our city becomes a shadow-only caster (layer 2) instead of being hidden
+  let b7SoSombra = false;
+  // shadow-only: three.js picks shadow casters with the MAIN camera's layers, so a separate layer cast nothing (07/10: only
+  // our tower and the trees had shadows). Our city stays in the scene but writes no colour/depth: invisible, still casting.
+  function objsB7() { const l = []; if (entB7.grupo) entB7.grupo.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine) l.push(o); }); const a = entB7.arvores && entB7.arvores(); if (a) l.push(a); return l; }
+  // 08/10 (Victor: floating roofs over Google): the far city / ring of our city arrive AFTER Google may already show; the
+  // marking ran once, so those late meshes stayed on screen (dark walls, orthophoto roofs in the air). Re-run on any new mesh.
+  let b7Marcados = 0;
+  function sombraSoB7() {
+    if (!entB7.grupo) return;
+    const objs = objsB7();
+    if (b7SoSombra && objs.length === b7Marcados) return;
+    b7SoSombra = true; b7Marcados = objs.length; entB7.grupo.visible = true;
+    for (const o of objs) { if (o.name === 'entorno-postes') continue; /* street-lamp glows stay on over Google (08/10) */ o.layers.set(0); for (const m of [].concat(o.material || [])) { if (m.userData.g3dCw === undefined) { m.userData.g3dCw = m.colorWrite; m.userData.g3dDw = m.depthWrite; }
+      // our GROUND (tipo 1, orthophoto) stays visible a bit behind Google's ground: it fills the holes left by ghosted buildings
+      if (m.uniforms && m.uniforms.uTipo && m.uniforms.uTipo.value === 1) { m.polygonOffset = true; m.polygonOffsetFactor = 2; m.polygonOffsetUnits = 16; if (m.uniforms.uSoChao) m.uniforms.uSoChao.value = 1; continue; } // ground only (no floating roofs)
+      m.colorWrite = false; m.depthWrite = false; } }
+    renderer.shadowMap.needsUpdate = true;
+  }
+  // our tower's box projected on screen: [[x0, y0, x1, y1] in drawing-buffer px (y up), nearest view depth]
+  const caixaTorre = new THREE.Box3(), cantoT = new THREE.Vector3(), tamT = new THREE.Vector2();
+  function caixaTorreNaTela() {
+    if (caixaTorre.isEmpty()) caixaTorre.setFromObject(PB.grupo);
+    renderer.getDrawingBufferSize(tamT); camera.updateMatrixWorld();
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, prof = 1e9;
+    for (let i = 0; i < 8; i++) {
+      cantoT.set(i & 1 ? caixaTorre.max.x : caixaTorre.min.x, i & 2 ? caixaTorre.max.y : caixaTorre.min.y, i & 4 ? caixaTorre.max.z : caixaTorre.min.z);
+      const d = -cantoT.clone().applyMatrix4(camera.matrixWorldInverse).z; prof = Math.min(prof, d);
+      if (d <= camera.near) return [null, 0]; // camera inside / behind the box: no ghosting
+      cantoT.project(camera);
+      const x = (cantoT.x * 0.5 + 0.5) * tamT.x, y = (cantoT.y * 0.5 + 0.5) * tamT.y;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    return [[x0 - 2, y0 - 2, x1 + 2, y1 + 2], prof - 1.5];
+  }
+  // top-down map of our city's building footprints, rendered once from its meshes (attribute _centro = centre x, z,
+  // radius): Google's fragments look up which building they belong to (google-vista.js g3dFantasma)
+  let mapaPrediosFeito = false, terrenoFeito = false;
+  const ALVO_FANT = new THREE.Vector3(CX, TOPO * 0.45, CZ); // same target as entorno.js atualizarCamera
+  function montaMapaPredios() {
+    try {
+      const TAM = 1400, N = 1024, gl = renderer.getContext();
+      const flutua = renderer.capabilities.isWebGL2 && gl.getExtension('EXT_color_buffer_float');
+      const rt = new THREE.WebGLRenderTarget(N, N, { type: flutua ? THREE.FloatType : THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false, depthBuffer: true });
+      const mat = new THREE.ShaderMaterial({ side: THREE.DoubleSide,
+        vertexShader: 'attribute vec4 _centro; varying vec3 vC; void main() { vC = _centro.xyz; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'varying vec3 vC; void main() { if (vC.x > 9000.0) discard; gl_FragColor = vec4(vC, 1.0); }' });
+      const cena = new THREE.Scene(), pais = new Map();
+      entB7.grupo.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.geometry && o.geometry.attributes._centro) pais.set(o, o.parent); });
+      const cam = new THREE.OrthographicCamera(-TAM / 2, TAM / 2, TAM / 2, -TAM / 2, 1, 3000);
+      cam.position.set(CX, 1500, CZ); cam.up.set(0, 0, -1); cam.lookAt(CX, 0, CZ); cam.updateMatrixWorld(true);
+      // each mesh drawn alone with the footprint material, at its world transform (it stays in its own parent)
+      const ac = renderer.autoClear, rtAnt = renderer.getRenderTarget(), cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha();
+      renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.autoClear = false;
+      for (const o of pais.keys()) { const c = new THREE.Mesh(o.geometry, mat); o.updateWorldMatrix(true, false); c.matrixAutoUpdate = false; c.matrix.copy(o.matrixWorld); c.matrixWorld.copy(o.matrixWorld); cena.children.length = 0; cena.add(c); c.matrixWorld.copy(o.matrixWorld); renderer.render(cena, cam); }
+      renderer.setRenderTarget(rtAnt); renderer.autoClear = ac; renderer.setClearColor(cc, ca);
+      // texel (u, v): u along +x; cam.up = -z puts z max at the bottom row (v 0): the shader flips v
+      gCena.mapaPredios(rt.texture, CX - TAM / 2, CZ - TAM / 2, TAM);
+      stats.mapaPredios = pais.size;
+    } catch (e) { console.warn('mapa de predios (fantasma do Google) falhou', e && e.message); }
+  }
+  function voltaB7() { // Google off (night / failure): our city back on screen
+    b7SoSombra = false; b7Marcados = 0;
+    for (const o of objsB7()) for (const m of [].concat(o.material || [])) if (m.userData.g3dCw !== undefined) { m.colorWrite = m.userData.g3dCw; m.depthWrite = m.userData.g3dDw; m.polygonOffset = false; if (m.uniforms && m.uniforms.uSoChao) m.uniforms.uSoChao.value = 0; }
+    if (entB7.grupo) entB7.grupo.visible = !!entB7.carregado;
+    chao.visible = rua.visible = !entB7.carregado;
+    renderer.shadowMap.needsUpdate = true;
+  }
+  const matSombraG = new THREE.ShadowMaterial({ opacity: +((/[?&]sombraG=([\d.]+)/.exec(location.search) || [0, 0.42])[1]), depthWrite: false, transparent: true });
+  matSombraG.depthFunc = THREE.LessEqualDepth; matSombraG.polygonOffset = true; matSombraG.polygonOffsetFactor = -1; matSombraG.polygonOffsetUnits = -1;
   function render() {
     if (ceuFisico.visible) ceuFisico.position.copy(camera.position);
     seguirCamera();
     entB7.atualizarCamera(camera); // B7: ghost neighbours between camera and tower
-    renderer.render(scene, camera);
+    // at night OUR city (dark, lit windows) instead of Google's day photos (Victor 07/10 20:49); Google pauses (no download)
+    const noiteCidade = false; // Google stays on at night: its tiles get the night grade + lit windows (google-vista.js)
+    if (gCena) { gCena.definirNoite(noiteCidade); gCena.antes(modoJanela || noiteCidade); }
+    const usaGoogle = !!(gCena && gCena.mostrando && !noiteCidade);
+    if (usaGoogle) { chao.visible = rua.visible = false; if (entorno) entorno.visible = false; if (entornoFantasma) entornoFantasma.visible = false; if (entB7.grupo) sombraSoB7(); }
+    else if (b7SoSombra) voltaB7();
+    if (usaGoogle) {
+      // the sun's shadow camera sees our tower (1) and the B7/B9 city as shadow-only casters (2)
+      if (!sol.shadow.camera.layers.isEnabled(2)) { sol.shadow.camera.layers.enable(1); sol.shadow.camera.layers.enable(2); renderer.shadowMap.needsUpdate = true; }
+      // B10: our tower + units are drawn in a second pass over Google's city (depth cleared), so they always read in front of
+      // Google's own mesh of the tower. Google's mesh is not clipped or hidden.
+      if (!torreCamada) { torreCamada = true; PB.grupo.traverse((o) => o.layers.set(1)); selUnid.layers.set(1); meshNoite.layers.set(1); hemi.layers.enable(1); sol.layers.enable(1); ray.layers.enableAll(); } // unit night lights go with the tower pass (they vanished under it)
+      // one pass with normal depth (Google's mesh of our building is clipped): our tower + Google's city, where Google's
+      // buildings in front of the tower are ghosted (dropped inside the tower's screen box)
+      if (!mapaPrediosFeito && entB7.carregado && entB7.grupo) { mapaPrediosFeito = true; montaMapaPredios(); }
+      if (!terrenoFeito && entB7.grupo) entB7.grupo.traverse((o) => { const u = !terrenoFeito && o.material && o.material.uniforms; if (u && u.uRua && u.uRua.value && u.uRuaOn && u.uRuaOn.value > 0.5) { terrenoFeito = true; gCena.terreno(u.uRua.value, u.uRuaExt.value); } });
+      gCena.fantasma(camera.position, ALVO_FANT);
+      if (!matSombraG.__recorte) { matSombraG.__recorte = true; gCena.aplicarRecorte(matSombraG); }
+      const fundo = scene.background, ac = renderer.autoClear;
+      camera.layers.set(0); camera.layers.enable(1); renderer.render(scene, camera);
+      scene.background = null; renderer.autoClear = false;
+      // shadows of the chosen hour over Google's photo city (same depth buffer: only the visible tile surface is darkened)
+      if (solEstado.modo === 'real' && sol.intensity > 0 && !/[?&]sombraG=0/.test(location.search)) {
+        sol.layers.enable(3); scene.overrideMaterial = matSombraG; camera.layers.set(3); renderer.render(scene, camera); scene.overrideMaterial = null;
+      }
+      scene.background = fundo; renderer.autoClear = ac; camera.layers.enableAll();
+    } else renderer.render(scene, camera);
     stats.quadros++;
     stats.calls = renderer.info.render.calls;
     stats.triangles = renderer.info.render.triangles;
@@ -710,7 +825,7 @@ export function criarCena({ container, predio, unidades, teste = false,
   canvas.style.cursor = 'grab';
 
   // ---------- context loss
-  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); stats.contextoPerdido = (stats.contextoPerdido || 0) + 1; });
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); stats.contextoPerdido = (stats.contextoPerdido || 0) + 1; if (!/[?&]teste=1/.test(location.search) && rebaixar()) setTimeout(() => location.reload(), 300); }); // out of GPU memory: one level down for this device
   canvas.addEventListener('webglcontextrestored', () => { stats.contextoRestaurado = (stats.contextoRestaurado || 0) + 1; renderer.shadowMap.needsUpdate = true; pedirRender(); });
 
   // ---------- sun (data from B3). F3: direction from sol.json az/el with the building north;
@@ -929,6 +1044,7 @@ export function criarCena({ container, predio, unidades, teste = false,
     ceuFisico.material.uniforms.sunPosition.value.copy(direcao(i.az, i.el));
     ceuFisico.material.uniforms.uAlfa.value = smooth(-8, 6, i.el);
     entB7.atualizarSol({ el: i.el, t: i.t, az: i.az, est: i.est }); // B7
+    if (gCena) gCena.definirSol(i.el); // B10
     // F23: direct sun ramps from 0 at the horizon (airmass), warm when low
     sol.intensity = LUZ.sol * 1.1 * forcaSolDireto(i.el);
     sol.color.set(0xfff4e6).lerp(cTemp.set('#ff9f55'), calorSol(i.el));
@@ -1158,6 +1274,8 @@ export function criarCena({ container, predio, unidades, teste = false,
     iniciarSol, setSol, desligarSol, enquadrarSol, emNoite: () => solEstado.noite > 0.5,
     solRef: () => ({ modo: solEstado.modo, ref: solEstado.ref ? Array.from(solEstado.ref) : null }),
     pontoDaUnidade, pontoDoSol, pontoDoArco, solDebug, setDeslocamento, irParaJanela, voltarDaJanela, medirEnquadramento, luminanciaMedia,
+    // B10: start/stop downloading the Google city seen from inside a unit (card open -> 360 window ready sooner)
+    preCarregarJanela: (u) => { preJanela = u; if (gCena) gCena.preCarregar(u); }, pararPreCarga: () => { preJanela = null; if (gCena) gCena.pararPreCarga(); }, // a card opened before Google is up is prefetched when it comes up (08/10)
     // test helper: top-down view over the tower; contorno = red outline of the B5 tower footprint, semPredio hides it
     vistaDeCima({ altura: h = 320, contorno = true, semPredio = false, raio = 0 } = {}) {
       controls.minPolarAngle = 0; controls.maxDistance = 1e4; controls.minDistance = 1;

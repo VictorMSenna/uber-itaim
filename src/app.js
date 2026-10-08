@@ -184,6 +184,7 @@ function abrirUnidade(id) {
   fecharAbertura();
   const trocando = !$('#card').hidden && app.unidade && app.unidade !== id; // card open: browse prices one by one
   app.unidade = id;
+  app.cena?.preCarregarJanela?.({ andar: u.andar, final: u.final }); // Google window view starts loading while the client reads the card
   // F8: the tapped unit is THE selection; its floor is only context
   // F37: only the unit is selected (no floor state)
   document.querySelectorAll('.cel').forEach((c) => c.classList.toggle('sel', c.dataset.id === id));
@@ -293,6 +294,7 @@ function desligarSolCard() {
 function fecharCard() {
   desligarSolCard();
   $('#card').hidden = true;
+  app.cena?.pararPreCarga?.();
   app.unidade = null;
   if (app.cena) { app.cena.marcarUnidade(null); }
   document.querySelectorAll('.cel.sel,.foto-svg g.sel').forEach((c) => c.classList.remove('sel'));
@@ -374,8 +376,7 @@ function modoSombra() {
   if (forcado === 'real' || forcado === 'pre') return forcado;
   const t = app.gpu?.tier;
   if (t && t.type === 'BENCHMARK') return t.tier >= 2 ? 'real' : 'pre';
-  const celular = (t && t.isMobile) || window.matchMedia('(pointer: coarse)').matches;
-  return celular ? 'pre' : 'real';
+  return 'real'; // 07/10 Victor: high-end phones get the real-time sun shadow too (only a measured weak GPU tier falls back)
 }
 async function alternarSol(_onde, abrir) {
   const S = await carregarSol();
@@ -400,7 +401,10 @@ async function alternarSol(_onde, abrir) {
 // ---------------------------------------------------------------- F4: enter the apartment (module by front B4)
 let interiorMod = null, interiorAberto = false;
 let tour360Url = undefined;
-async function manifestoTour360() {
+// one shared promise: two callers at the same moment (card + deep link) used to get null from the second one -> real-video fallback
+let tour360Promessa = null;
+function manifestoTour360() { return tour360Promessa || (tour360Promessa = carregaManifestoTour360()); }
+async function carregaManifestoTour360() {
   if (tour360Url !== undefined) return tour360Url;
   tour360Url = null;
   const amostra = params.get('tour360') === 'amostra';
@@ -418,12 +422,14 @@ async function manifestoTour360() {
 // neighbour links to missing points and any light layer whose fixture is not confirmed (Victor 22:5x: no light
 // without the fixture seen in the clips). Returns the manifest OBJECT (base = folder of the manifest) or null.
 const LUZES_CONFIRMADAS = ['teto', 'abajur', 'cozinha'];
+// v4: fora (window mask, also used by the Google city), albedo/normal/solvis/solind (minute-by-minute sun) are data layers, not lights
+const CAMADAS_BASE = ['ceu', 'sol', 'noite', 'fora', 'albedo', 'normal', 'solvis', 'solind'];
 function limparManifesto360(man, url) {
   if (!man || !Array.isArray(man.pontos)) return null;
   const completo = (p) => p && p.id && p.camadas && p.camadas.ceu && p.camadas.ceu.arq;
   const pontos = man.pontos.filter(completo).map((p) => {
     const camadas = {};
-    for (const [k, v] of Object.entries(p.camadas)) if (k === 'ceu' || k === 'sol' || k === 'noite' || LUZES_CONFIRMADAS.includes(k)) camadas[k] = v;
+    for (const [k, v] of Object.entries(p.camadas)) if (CAMADAS_BASE.includes(k) || LUZES_CONFIRMADAS.includes(k)) camadas[k] = v;
     return { ...p, camadas };
   });
   const ids = new Set(pontos.map((p) => p.id));
@@ -441,6 +447,7 @@ async function carregarInterior() {
         tour360: true,
         // lamps on by default (same as the 3D interior), so night is never a black room
         abrirInterior: (o) => t.abrirTour360({ container: o.container, manifesto: man, estacao: o.estacao, minutos: o.minutos, aoFechar: o.aoFechar, teste: o.teste,
+          andar: porId.get(o.id)?.andar, final: porId.get(o.id)?.final, // Google city seen from the real unit
           luzes: { teto: true, abajur: true, cortineiro: false, cozinha: false } }), // night default: spots + bedside lamps (WB neutralised in render-mix)
         definirHora: t.definirHora, definirEstacao: t.definirEstacao, fecharInterior: t.fecharTour360,
       };
@@ -504,9 +511,11 @@ const vistaInterior = new Map(); // unit id -> last B4 viewpoint (porta/janela/v
 let historicoEmpurrado = false, entrando = false;
 function preencherBarraInterior(u) {
   const s = STATUS[u.situacao];
-  $('#ib-txt').replaceChildren(el('b', { text: `Unidade ${u.numero}` }), ` · ${u.andar}º andar · `,
-    el('span', { class: `ib-sit ${u.situacao}`, text: s.rotulo }),
-    u.preco_total != null ? el('span', { class: 'mono', text: ` · ${brl(u.preco_total).replace(',00', '')}` }) : '');
+  // phone (08/10, Victor: no truncated text, only the essentials): line 1 unit + floor, line 2 price; status as a coloured dot
+  $('#ib-txt').replaceChildren(el('span', { class: 'ib-l1' }, [el('b', { text: `Unidade ${u.numero}` }), el('span', { class: 'ib-andar', text: ` · ${u.andar}º andar` }),
+    el('span', { class: 'ib-sep', text: ' · ' }), el('span', { class: `ib-sit ${u.situacao}`, text: s.rotulo })]),
+    el('span', { class: 'ib-l2' }, [el('span', { class: 'ib-andar-c', text: `${u.andar}º andar · ` }),
+      u.preco_total != null ? el('span', { class: 'mono ib-preco', text: brl(u.preco_total).replace(',00', '') }) : '']));
   $('#ib-wa').href = linkWhatsapp(u);
   $('#int-detalhes').hidden = true;
   $('#int-det-eyebrow').textContent = `${u.andar}º andar · final ${u.final}`;
@@ -695,18 +704,17 @@ async function carregarVistaFoto() {
   box.append(svg);
   app.temFoto = true;
   app.fotoUnidades = svg.querySelectorAll('g[data-uid]').length;
-  $('#btn-vista').hidden = false;
+  $('#btn-vista').hidden = true; // 08/10: the photo view is gone
   aplicarFiltro();
-  if (app.modo3d === 'sem3d') mostrarVista('foto');
 }
 function mostrarVista(qual) {
-  if (qual === 'foto' && !app.temFoto) return;
+  if (qual === 'foto') return; // 08/10 Victor: the painted-units photo never appears (only the opening page and the 3D model)
   app.vista = qual;
   $('#foto').hidden = qual !== 'foto';
   $('#cena').style.visibility = qual === 'foto' ? 'hidden' : 'visible';
   $('#btn-vista-txt').textContent = qual === 'foto' ? 'Maquete' : 'Foto';
   $('#btn-vista').setAttribute('aria-label', qual === 'foto' ? 'Ver a maquete 3D' : 'Ver a foto do prédio');
-  $('#btn-foto-real').textContent = qual === 'foto' ? '‹ Maquete 3D' : 'Foto real';
+
   document.body.classList.toggle('vista-foto', qual === 'foto'); // F27: hides the sun bar and the 3D hint over the photo
   document.body.classList.toggle('sem3d', app.modo3d === 'sem3d');
   if (qual === 'foto' && app.modo3d !== 'sem3d') { painelUnidades(false); if (!$('#card').hidden) fecharCard(); }
@@ -770,7 +778,7 @@ function semTresD(motivo) {
       el('p', { text: 'Use a lista de unidades: mesmas cores, preço e WhatsApp.' }),
       el('p', { class: 'so-revisao', style: 'font-size:12px', text: `Motivo técnico: ${motivo}` }))));
   $('#cena').style.background = 'var(--base)';
-  if (app.temFoto) mostrarVista('foto'); else painelUnidades(true);
+  painelUnidades(true); // no 3D on this device: the units list (never the painted photo)
 }
 
 // ---------------------------------------------------------------- opening, legal, wiring
