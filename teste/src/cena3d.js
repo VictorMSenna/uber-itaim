@@ -269,7 +269,7 @@ export function criarCena({ container, predio, unidades, teste = false,
   const nossoCarregou = () => { if ((entB7.carregado || !DRONE) && (b7.fachada || !b7Ativo('fachada'))) avisaNosso(); };
   if (!/[?&]google3d=0/.test(location.search)) nossoPronto.then(() => import('./google-vista.js')).then(async (gm) => {
     // origin of the B5 plan (sidewalk NW corner, y = 0): LiDAR-registered (b7 quadro.py); h = LiDAR 736.39 m + geoid N (-3.5 m, calibrated in RELATORIO-B10)
-    gCena = await gm.ligarGoogleCena({ scene, camera, renderer, ref: { lat: -23.5939395, lon: -46.6747339, h: 732.89, rumoX: 71.67 }, aoMudar: () => pedirRender(), recorte: (() => { const bx = new THREE.Box3().setFromObject(PB.grupo); bx.min.x -= 2.2; bx.min.z -= 2.2; bx.max.x += 2.2; bx.max.z += 2.2; /* 07/10: the real building's balconies stuck out of 0.8 m */ bx.min.y = 0.3 /* 07/10: keeps the ground around the tower (no hole) */; bx.max.y += 3; return bx; })(),
+    gCena = await gm.ligarGoogleCena({ scene, camera, renderer, ref: { lat: -23.5939395, lon: -46.6747339, h: 732.89, rumoX: 71.67 }, aoMudar: () => pedirRender(), recorte: (() => { const bx = new THREE.Box3().setFromObject(PB.grupo); bx.min.x -= 2.2; bx.min.z -= 2.2; bx.max.x += 2.2; bx.max.z += 2.2; /* 07/10: the real building's balconies stuck out of 0.8 m */ bx.min.y = 3.5 /* 07/10: keeps Google's ground around the tower (0.3 m showed our 2020 construction-site photo as a grey stain) */; bx.max.y += 3; return bx; })(),
       mostrar: () => { chao.visible = rua.visible = !entB7.carregado; if (entB7.grupo) { entB7.grupo.visible = !!entB7.carregado; if (b7SoSombra) voltaB7(); } pedirRender(); } });
     if (gCena && solEstado.ultimo) gCena.definirSol(solEstado.ultimo.el);
   }).catch((e) => console.warn('google3d (cena) indisponivel', e && e.message));
@@ -571,7 +571,7 @@ export function criarCena({ container, predio, unidades, teste = false,
     b7SoSombra = true; entB7.grupo.visible = true;
     for (const o of objsB7()) { o.layers.set(0); for (const m of [].concat(o.material || [])) { if (m.userData.g3dCw === undefined) { m.userData.g3dCw = m.colorWrite; m.userData.g3dDw = m.depthWrite; }
       // our GROUND (tipo 1, orthophoto) stays visible a bit behind Google's ground: it fills the holes left by ghosted buildings
-      if (m.uniforms && m.uniforms.uTipo && m.uniforms.uTipo.value === 1) { m.polygonOffset = true; m.polygonOffsetFactor = 2; m.polygonOffsetUnits = 16; continue; }
+      if (m.uniforms && m.uniforms.uTipo && m.uniforms.uTipo.value === 1) { m.polygonOffset = true; m.polygonOffsetFactor = 2; m.polygonOffsetUnits = 16; if (m.uniforms.uSoChao) m.uniforms.uSoChao.value = 1; continue; } // ground only (no floating roofs)
       m.colorWrite = false; m.depthWrite = false; } }
     renderer.shadowMap.needsUpdate = true;
   }
@@ -619,7 +619,7 @@ export function criarCena({ container, predio, unidades, teste = false,
   }
   function voltaB7() { // Google off (night / failure): our city back on screen
     b7SoSombra = false;
-    for (const o of objsB7()) for (const m of [].concat(o.material || [])) if (m.userData.g3dCw !== undefined) { m.colorWrite = m.userData.g3dCw; m.depthWrite = m.userData.g3dDw; m.polygonOffset = false; }
+    for (const o of objsB7()) for (const m of [].concat(o.material || [])) if (m.userData.g3dCw !== undefined) { m.colorWrite = m.userData.g3dCw; m.depthWrite = m.userData.g3dDw; m.polygonOffset = false; if (m.uniforms && m.uniforms.uSoChao) m.uniforms.uSoChao.value = 0; }
     if (entB7.grupo) entB7.grupo.visible = !!entB7.carregado;
     chao.visible = rua.visible = !entB7.carregado;
     renderer.shadowMap.needsUpdate = true;

@@ -93,7 +93,7 @@ const FRAG = /* glsl */`
   uniform sampler2D uRua; uniform float uRuaOn; uniform float uRuaExt;     // street-light glow map (R sodium, G LED)
   uniform vec3 uSolW; uniform float uQuente; uniform float uFrio;   // E2: sun direction (world), warm/cool amounts
   uniform vec3 uGrade; uniform float uNoite; uniform float uFrac; uniform vec3 uHaze; uniform vec3 uHazeQ; uniform float uHazeD;
-  uniform float uFant; uniform vec3 uCam; uniform vec3 uAlvo; uniform float uRaio;
+  uniform float uFant; uniform vec3 uCam; uniform vec3 uAlvo; uniform float uRaio; uniform float uSoChao;
   varying vec2 vUv; varying vec3 vB; varying vec3 vW; varying vec3 vC; varying float vAng; varying vec2 vLm;
   // B9 (07/10): sky light baked in Cycles (AO + bounce, no sun): walls = uLmP at vLm, ground/roofs = uLmT top-down
   // (box uLmBox = cx, cz, half). Stored as sqrt(lm / 2): walls relative to their building's mean, ground relative to open roofs. uLmK = strength (photo walls, procedural walls, ground).
@@ -176,6 +176,10 @@ const FRAG = /* glsl */`
   float bayer(vec2 p) { vec2 q = mod(floor(p), 4.0); float b = 0.0;
     b = mod(q.x + q.y * 2.0, 4.0); return (b + mod(q.y, 2.0) * 0.5 + 0.25) / 4.5; }
   void main() {
+    // B10: under Google's city only our GROUND is drawn (fills ghosted buildings' holes); roofs and anything above the terrain go
+    if (uSoChao > 0.5) { float terr = 0.0; vec2 rq0 = (vB.xz + uRuaExt) / (2.0 * uRuaExt);
+      if (uRuaOn > 0.5 && rq0.x > 0.0 && rq0.x < 1.0 && rq0.y > 0.0 && rq0.y < 1.0) terr = texture2D(uRua, rq0).b * 60.0 - 20.0;
+      if (vB.y > terr + 1.5) discard; }
     if (uFant > 0.5 && vC.x < 9000.0) {
       // maquete: whole buildings (and trees) standing between the camera and the tower, or around the camera, are hidden
       vec2 a = uCam.xz, b = uAlvo.xz, ab = b - a;
@@ -440,7 +444,7 @@ function material(map, tipo) {
       uSolW: { value: new THREE.Vector3(0, 1, 0) }, uQuente: { value: 0 }, uFrio: { value: 0 },
       uGrade: { value: new THREE.Vector3(1, 1, 1) }, uNoite: { value: 0 }, uFrac: { value: 0.3 },
       uHaze: { value: new THREE.Color(0xd8dde2) }, uHazeQ: { value: new THREE.Color(0xd8dde2) }, uHazeD: { value: 0.0007 },
-      uFant: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAlvo: { value: new THREE.Vector3(15, 25, 8) }, uRaio: { value: 22 },
+      uFant: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAlvo: { value: new THREE.Vector3(15, 25, 8) }, uRaio: { value: 22 }, uSoChao: { value: 0 },
       uDet: { value: null }, uDetOn: { value: 0 }, uDetBox: { value: new THREE.Vector3(15, 8, 80) },
       uRua: { value: null }, uRuaOn: { value: 0 }, uRuaExt: { value: 409.6 },
       uLmP: { value: null }, uLmT: { value: null }, uLmOn: { value: 0 }, uLmPOn: { value: 0 }, uLmBox: { value: new THREE.Vector3(0, 0, 1) }, uLmK: { value: new THREE.Vector3(...LM_K) },
