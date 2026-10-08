@@ -704,18 +704,17 @@ async function carregarVistaFoto() {
   box.append(svg);
   app.temFoto = true;
   app.fotoUnidades = svg.querySelectorAll('g[data-uid]').length;
-  $('#btn-vista').hidden = app.modo3d !== 'sem3d'; // 08/10: only when the 3D model cannot open
+  $('#btn-vista').hidden = true; // 08/10: the photo view is gone
   aplicarFiltro();
-  if (app.modo3d === 'sem3d') mostrarVista('foto');
 }
 function mostrarVista(qual) {
-  if (qual === 'foto' && (!app.temFoto || app.modo3d !== 'sem3d')) return; // 08/10 Victor: photo view only as the no-3D fallback
+  if (qual === 'foto') return; // 08/10 Victor: the painted-units photo never appears (only the opening page and the 3D model)
   app.vista = qual;
   $('#foto').hidden = qual !== 'foto';
   $('#cena').style.visibility = qual === 'foto' ? 'hidden' : 'visible';
   $('#btn-vista-txt').textContent = qual === 'foto' ? 'Maquete' : 'Foto';
   $('#btn-vista').setAttribute('aria-label', qual === 'foto' ? 'Ver a maquete 3D' : 'Ver a foto do prédio');
-  $('#btn-foto-real').textContent = qual === 'foto' ? '‹ Maquete 3D' : 'Foto real';
+
   document.body.classList.toggle('vista-foto', qual === 'foto'); // F27: hides the sun bar and the 3D hint over the photo
   document.body.classList.toggle('sem3d', app.modo3d === 'sem3d');
   if (qual === 'foto' && app.modo3d !== 'sem3d') { painelUnidades(false); if (!$('#card').hidden) fecharCard(); }
@@ -779,7 +778,7 @@ function semTresD(motivo) {
       el('p', { text: 'Use a lista de unidades: mesmas cores, preço e WhatsApp.' }),
       el('p', { class: 'so-revisao', style: 'font-size:12px', text: `Motivo técnico: ${motivo}` }))));
   $('#cena').style.background = 'var(--base)';
-  if (app.temFoto) mostrarVista('foto'); else painelUnidades(true);
+  painelUnidades(true); // no 3D on this device: the units list (never the painted photo)
 }
 
 // ---------------------------------------------------------------- opening, legal, wiring
