@@ -33,9 +33,10 @@ export function capacidade() {
   if (q === 'topo' || q === 'medio' || q === 'leve') nivel = q;
   const T = {
     topo: { google: true, tilesMB: movel ? (ios ? 500 : 700) : 1200, erro360: 16, larguraPano: 4096, dprMax: 3, parse: movel ? 3 : 8 },
-    medio: { google: true, tilesMB: 260, erro360: 24, larguraPano: 2048, dprMax: 2, parse: 2 },
+    medio: { google: true, tilesMB: 260, erro360: 24, larguraPano: 3072, dprMax: 2.5, parse: 2 }, // 3072: what Victor's M21s ran in the demo (2048 looked blurry)
     leve: { google: false, tilesMB: 0, erro360: 32, larguraPano: 2048, dprMax: 1.5, parse: 1 },
   }[nivel];
+  const pw = +new URLSearchParams(location.search).get('pano'); if (pw) T.larguraPano = pw; // tests
   cache = { nivel, movel, mem, gpu, maxTex, ...T };
   if (typeof window !== 'undefined') window.__capacidade = cache;
   return cache;

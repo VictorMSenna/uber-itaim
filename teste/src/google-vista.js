@@ -143,8 +143,9 @@ export function iniciarGoogle() {
       const movel = capacidade().movel;
       const mb = +new URLSearchParams(location.search).get('gmb') || capacidade().tilesMB;
       tiles.lruCache.maxBytesSize = mb * 1048576;
-      // hidden tiles (parents / off-screen) are never uploaded, so they keep their CPU copy: on phones evict them early
-      tiles.lruCache.minBytesSize = Math.round(mb * (movel ? 0.3 : 0.6)) * 1048576;
+      // keep EVERYTHING already downloaded until the device budget is nearly full (Victor 07/10: turning away and back made
+      // the city reload); only then the least recently seen tiles go
+      tiles.lruCache.minBytesSize = Math.round(mb * 0.95) * 1048576;
       tiles.autoDisableRendererCulling = true;
       const escena = new THREE.Scene(); escena.add(tiles.group);
       const s = { tiles, escena, TilesRenderer, dono: null, cor: [1, 1, 1] };
