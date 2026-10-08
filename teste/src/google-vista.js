@@ -369,13 +369,22 @@ export class VistaGoogle {
       this.foto = { cams, alvos: [], chave: null, faces: [], i: 0, reg: 0, t0: 0, feito: false, prog: 0, mats: [] };
     }
     const F = this.foto, ref = this.ref, agora = performance.now();
-    const chave = [ref.lat, ref.lon, ref.h, ref.rumo, ref.ajuste && ref.ajuste.rumo, this.dirs ? this.dirs.length : 0].join('|');
-    if (chave !== F.chave) { // new point / unit: a new picture (our render's city stays in the window meanwhile)
-      F.chave = chave; F.faces = this.facesDaJanela(); F.i = 0; F.reg = 0; F.t0 = agora; F.feito = false; F.log = []; F.fila = null;
+    // one picture per UNIT (tour360 sets unidadeChave); points of the unit reuse it and only add faces they need
+    const chave = this.unidadeChave || [ref.lat, ref.lon, ref.h, ref.rumo].join('|');
+    const alvo = (lado) => { const c = new THREE.WebGLRenderTarget(lado, lado, { type: THREE.UnsignedByteType, generateMipmaps: false, depthBuffer: true });
+      c.texture.colorSpace = THREE.SRGBColorSpace; c.texture.minFilter = c.texture.magFilter = THREE.LinearFilter; return c; };
+    if (chave === F.chave && this.dirs !== F.dirsVistos) { // another point of the same unit: shoot only the missing window faces
+      F.dirsVistos = this.dirs;
+      const falta = this.facesDaJanela().filter((f) => !F.faces.includes(f)).slice(0, 4 - F.faces.length);
+      if (falta.length) {
+        if (F.feito) { F.i = F.faces.length; F.reg = 0; F.fila = null; F.t0 = agora; F.feito = false; this.restauraCache(); const c = this.s.tiles.lruCache; this._guardaCache(); c.minBytesSize = 0; c.unloadPercent = 1; c.maxBytesSize = Math.max(c.maxBytesSize, FOTO_MB); try { localStorage.setItem('tabela3d-foto-ativa', String(Date.now())); } catch (e) { /* ignore */ } }
+        for (const f of falta) { F.faces.push(f); F.alvos.push({ A: alvo(FOTO_LADO), W: alvo(FOTO_LADO_W) }); F.mats.push(new THREE.Matrix4().multiplyMatrices(F.cams[f].projectionMatrix, F.cams[f].matrixWorldInverse)); }
+      }
+    }
+    if (chave !== F.chave) { // new unit: a new picture (our render's city stays in the window meanwhile)
+      F.chave = chave; F.dirsVistos = this.dirs; F.matriz = this.matriz.clone(); F.faces = this.facesDaJanela(); F.i = 0; F.reg = 0; F.t0 = agora; F.feito = false; F.log = []; F.fila = null;
       // two 2D targets per window face: A = city with neutral light, W = only the lit night windows. The tile shader is linear
       // in (uLuz, uNoiteG): any hour = A x base(hour) + W x lights(hour) in the overlay, no re-shoot when the time changes
-      const alvo = (lado) => { const c = new THREE.WebGLRenderTarget(lado, lado, { type: THREE.UnsignedByteType, generateMipmaps: false, depthBuffer: true });
-        c.texture.colorSpace = THREE.SRGBColorSpace; c.texture.minFilter = c.texture.magFilter = THREE.LinearFilter; return c; };
       for (const a of F.alvos) { a.A.dispose(); a.W.dispose(); }
       F.alvos = F.faces.map(() => ({ A: alvo(FOTO_LADO), W: alvo(FOTO_LADO_W) }));
       F.mats = F.faces.map((f) => new THREE.Matrix4().multiplyMatrices(F.cams[f].projectionMatrix, F.cams[f].matrixWorldInverse));
@@ -393,7 +402,7 @@ export class VistaGoogle {
     if (!F.sel) F.sel = new THREE.PerspectiveCamera(90, 1, 3, RAIO);
     const cam = F.sel; cam.quaternion.copy(base.quaternion); cam.position.set(0, 0, 0); cam.up.copy(base.up);
     cam.setViewOffset(L, L, x, y, w, w); cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
-    this.s.tomar(this, this.s.escena, this.matriz, cam, ERRO_FOTO);
+    this.s.tomar(this, this.s.escena, F.matriz || this.matriz, cam, ERRO_FOTO); // the unit's first point
     if (t.cameras.length !== 1 || t.cameras[0] !== cam) { for (const c of [...t.cameras]) t.deleteCamera(c); t.setCamera(cam); }
     t.setResolution(cam, w, w);
     this.s.escena.updateMatrixWorld(true);
@@ -540,6 +549,7 @@ uniform sampler2D fA0; uniform sampler2D fA1; uniform sampler2D fA2; uniform sam
 uniform sampler2D fW0; uniform sampler2D fW1; uniform sampler2D fW2; uniform sampler2D fW3;
 uniform mat4 fM[4];
 uniform float nF;
+uniform float nOk;
 uniform vec3 luzBase;
 uniform float luzesN;
 uniform float usaCubo;
@@ -552,9 +562,9 @@ void main(){
     vec3 d = vec3(cos(phi) * sin(th), cos(th), sin(phi) * sin(th));
     float f = -d.x, r = -d.z;
     vec3 L = vec3(sin(rumoB) * f + cos(rumoB) * r, d.y, -(cos(rumoB) * f - sin(rumoB) * r));
-    g = vec4(0.0);
+    g = vec4(0.0); bool achou = false;
     for (int k = 0; k < 4; k++) {
-      if (float(k) >= nF) break;
+      if (float(k) >= nOk) break;
       vec4 c = fM[k] * vec4(L, 1.0);
       if (c.w <= 0.0) continue;
       vec2 q = c.xy / c.w;
@@ -564,9 +574,10 @@ void main(){
       else if (k == 1) { a = texture2D(fA1, uv); w = texture2D(fW1, uv).rgb; }
       else if (k == 2) { a = texture2D(fA2, uv); w = texture2D(fW2, uv).rgb; }
       else { a = texture2D(fA3, uv); w = texture2D(fW3, uv).rgb; }
-      g = vec4(a.rgb * luzBase + w * luzesN, a.a);
+      g = vec4(a.rgb * luzBase + w * luzesN, a.a); achou = true;
       break;
     }
+    if (!achou) { gl_FragColor = vec4(0.0); return; } // face not shot yet: our render's city stays
   } else g = texture2D(tG, gl_FragCoord.xy / res);
   // sky where Google drew nothing (equirect: v 0.5 = horizon, 1 = zenith)
   vec3 ceu = mix(ceuHoriz, ceuTopo, smoothstep(0.5, 0.78, vUv.y));
@@ -577,7 +588,7 @@ export function materialSobreposicao() {
   return new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG, transparent: true, depthTest: false, depthWrite: false,
     uniforms: { tG: { value: null }, tM: { value: null }, res: { value: new THREE.Vector2(1, 1) }, ganho: { value: new THREE.Vector3(1, 1, 1) }, forca: { value: 1 }, fA0: { value: null }, fA1: { value: null }, fA2: { value: null }, fA3: { value: null }, fW0: { value: null }, fW1: { value: null }, fW2: { value: null }, fW3: { value: null },
-      fM: { value: [new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4()] }, nF: { value: 0 }, luzBase: { value: new THREE.Vector3(1, 1, 1) }, luzesN: { value: 0 }, usaCubo: { value: 0 }, rumoB: { value: 0 },
+      fM: { value: [new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4()] }, nF: { value: 0 }, nOk: { value: 0 }, luzBase: { value: new THREE.Vector3(1, 1, 1) }, luzesN: { value: 0 }, usaCubo: { value: 0 }, rumoB: { value: 0 },
       ceuTopo: { value: new THREE.Vector3(0.12, 0.27, 0.6) }, ceuHoriz: { value: new THREE.Vector3(0.55, 0.66, 0.8) } },
   });
 }

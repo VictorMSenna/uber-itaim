@@ -292,7 +292,7 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
           // follows the unit the client opened: final (side, xy, bearing) + floor from dados/google-geo.json; old per-point geo as fallback
           const g = g0.porUnidade ? g0 : { ...g0, h: g0.h + (andar != null && g0.andar_ref != null ? (andar - g0.andar_ref) * (g0.por_andar || 2.81) : 0) };
           // switching points inside the unit keeps Google's window on (the tiles are already here: no 'reload' look)
-          vista.ref = { ...g, ajuste: window.__g3dAjuste || g.ajuste };
+          vista.ref = { ...g, ajuste: window.__g3dAjuste || g.ajuste }; vista.unidadeChave = andar != null && final != null ? `${andar}-${final}` : null;
           vista.ligaNaCena();
           mat.uniforms.tM.value = e.mix.mat.uniforms.tFora.value;
           vista.definirMascara(mat.uniforms.tM.value && mat.uniforms.tM.value.image);
@@ -350,11 +350,11 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
             camera.updateMatrixWorld(true); const janela = vista.janelaNaTela(camera);
             const ve = !!janela && !andando;
             malha.visible = ve && vista.pronto; malha.position.copy(camera.position);
-            mat.uniforms.usaCubo.value = 1; { const F = vista.foto, U = mat.uniforms; U.nF.value = F.alvos.length;
+            mat.uniforms.usaCubo.value = 1; { const F = vista.foto, U = mat.uniforms; U.nF.value = F.alvos.length; U.nOk.value = F.feito ? F.alvos.length : F.i;
               F.alvos.forEach((a, k) => { U['fA' + k].value = a.A.texture; U['fW' + k].value = a.W.texture; U.fM.value[k].copy(F.mats[k]); }); }
             { const L = gm.luzDaCidade(this.el); mat.uniforms.luzBase.value.set(...L.base); mat.uniforms.luzesN.value = L.luzes; } // hour of the day on the picture
             mat.uniforms.rumoB.value = ((vista.ref.rumo + ((vista.ref.ajuste && vista.ref.ajuste.rumo) || 0)) * Math.PI) / 180;
-            vista.progressoFoto(ve);
+            vista.progressoFoto(true); // the bar stays while the picture is being made, wherever the visitor looks (Victor 08/10)
             const op = vista.opacidade(); mat.uniforms.forca.value = op; if (op < 1 && malha.visible) vista.acordar();
             vista.credito.hidden = !malha.visible || op <= 0;
             if ((perf.n++ & 31) === 0) { const rot = raiz.querySelector('.t360-rot'); const topo = rot && rot.offsetParent ? rot.getBoundingClientRect().top : innerHeight - 120; const bb = Math.max(78, Math.round(raiz.getBoundingClientRect().bottom - topo + 6)) + 'px'; vista.credito.style.bottom = bb; vista.carga.style.bottom = bb; }
