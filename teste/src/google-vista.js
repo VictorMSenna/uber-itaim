@@ -404,17 +404,31 @@ uniform sampler2D tM;
 uniform vec2 res;
 uniform vec3 ganho;
 uniform float forca;
+uniform vec3 ceuTopo;
+uniform vec3 ceuHoriz;
 void main(){
   float m = texture2D(tM, vUv).r;
   vec4 g = texture2D(tG, gl_FragCoord.xy / res);
-  gl_FragColor = vec4(g.rgb * ganho, m * g.a * forca);
+  // sky where Google drew nothing (equirect: v 0.5 = horizon, 1 = zenith)
+  vec3 ceu = mix(ceuHoriz, ceuTopo, smoothstep(0.5, 0.78, vUv.y));
+  gl_FragColor = vec4(mix(ceu, g.rgb * ganho, g.a), m * forca);
   #include <colorspace_fragment>
 }`;
 export function materialSobreposicao() {
   return new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG, transparent: true, depthTest: false, depthWrite: false,
-    uniforms: { tG: { value: null }, tM: { value: null }, res: { value: new THREE.Vector2(1, 1) }, ganho: { value: new THREE.Vector3(1, 1, 1) }, forca: { value: 1 } },
+    uniforms: { tG: { value: null }, tM: { value: null }, res: { value: new THREE.Vector2(1, 1) }, ganho: { value: new THREE.Vector3(1, 1, 1) }, forca: { value: 1 },
+      ceuTopo: { value: new THREE.Vector3(0.12, 0.27, 0.6) }, ceuHoriz: { value: new THREE.Vector3(0.55, 0.66, 0.8) } },
   });
+}
+// sky colours (linear) for the window by sun elevation: day blue, warm horizon around sunrise/sunset, dark night
+export function ceuParaSol(el) {
+  const e = Number.isFinite(el) ? el : -20;
+  const dia = smooth(-2, 10, e), crep = smooth(-8, 0, e) * (1 - smooth(4, 14, e));
+  const L = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
+  let topo = L([0.008, 0.012, 0.03], [0.12, 0.27, 0.6], dia), horiz = L([0.02, 0.025, 0.05], [0.55, 0.66, 0.8], dia);
+  topo = L(topo, [0.16, 0.2, 0.42], crep * 0.5); horiz = L(horiz, [0.85, 0.6, 0.42], crep * 0.45);
+  return { topo, horiz };
 }
 // daylight baked in the tiles -> dusk / night: darker + bluer, following the same smooth elevation ramp as render-mix.js
 export function ganhoParaSol(el, { dia = 1.35, noite = 0.14 } = {}) {

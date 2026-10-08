@@ -29,7 +29,10 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
   const man = typeof manifesto === 'string' ? await (await fetch(manifesto)).json() : manifesto;
   const base = typeof manifesto === 'string' ? manifesto.replace(/[^/]*$/, '') : (man.base || '');
   const PTS = Object.fromEntries(man.pontos.map((p) => [p.id, p]));
-  const estado = { estacao, minutos, luzes: { ...luzes }, ponto: ponto && PTS[ponto] ? ponto : man.pontos[0].id };
+  // first view: the middle of the room facing the balcony when it has the new render (window mask = its own exposure +
+  // Google city of the unit); otherwise the first point with a window mask; the manifest order last (07/10 Victor)
+  const pontoInicial = () => (man.pontos.find((p) => p.id === 'meio' && p.camadas && p.camadas.fora) || man.pontos.find((p) => p.camadas && p.camadas.fora) || man.pontos[0]).id;
+  const estado = { estacao, minutos, luzes: { ...luzes }, ponto: ponto && PTS[ponto] ? ponto : pontoInicial() };
   let G = null; // B10 (local test): optional live layer with Google Photorealistic 3D Tiles behind the `fora` window mask; null = current behaviour
 
   // ---------------------------------------------------------------- DOM
@@ -290,6 +293,7 @@ async function criar({ container, manifesto = 'assets/render/tour360/manifesto.j
           // the time-of-day grade + night windows live in the tile shaders (shared with the outside view); here only the
           // brightness match of the window (city behind glass ~1.35x, as before)
           sess.definirLuz(el); mat.uniforms.ganho.value.setScalar((window.__g3dGanho && window.__g3dGanho.dia) || 1.35);
+          { const c = gm.ceuParaSol(el); mat.uniforms.ceuTopo.value.set(...c.topo); mat.uniforms.ceuHoriz.value.set(...c.horiz); } // sky of the hour in the window
           this.el = el; // night (sun below -2 deg): the window shows our render's night city, not Google's day photos
           atual = id;
         },
