@@ -569,7 +569,10 @@ export function criarCena({ container, predio, unidades, teste = false,
   function sombraSoB7() {
     if (b7SoSombra || !entB7.grupo) return;
     b7SoSombra = true; entB7.grupo.visible = true;
-    for (const o of objsB7()) { o.layers.set(0); for (const m of [].concat(o.material || [])) { if (m.userData.g3dCw === undefined) { m.userData.g3dCw = m.colorWrite; m.userData.g3dDw = m.depthWrite; } m.colorWrite = false; m.depthWrite = false; } }
+    for (const o of objsB7()) { o.layers.set(0); for (const m of [].concat(o.material || [])) { if (m.userData.g3dCw === undefined) { m.userData.g3dCw = m.colorWrite; m.userData.g3dDw = m.depthWrite; }
+      // our GROUND (tipo 1, orthophoto) stays visible a bit behind Google's ground: it fills the holes left by ghosted buildings
+      if (m.uniforms && m.uniforms.uTipo && m.uniforms.uTipo.value === 1) { m.polygonOffset = true; m.polygonOffsetFactor = 2; m.polygonOffsetUnits = 16; continue; }
+      m.colorWrite = false; m.depthWrite = false; } }
     renderer.shadowMap.needsUpdate = true;
   }
   // our tower's box projected on screen: [[x0, y0, x1, y1] in drawing-buffer px (y up), nearest view depth]
@@ -590,7 +593,7 @@ export function criarCena({ container, predio, unidades, teste = false,
   }
   // top-down map of our city's building footprints, rendered once from its meshes (attribute _centro = centre x, z,
   // radius): Google's fragments look up which building they belong to (google-vista.js g3dFantasma)
-  let mapaPrediosFeito = false;
+  let mapaPrediosFeito = false, terrenoFeito = false;
   const ALVO_FANT = new THREE.Vector3(CX, TOPO * 0.45, CZ); // same target as entorno.js atualizarCamera
   function montaMapaPredios() {
     try {
@@ -616,7 +619,7 @@ export function criarCena({ container, predio, unidades, teste = false,
   }
   function voltaB7() { // Google off (night / failure): our city back on screen
     b7SoSombra = false;
-    for (const o of objsB7()) for (const m of [].concat(o.material || [])) if (m.userData.g3dCw !== undefined) { m.colorWrite = m.userData.g3dCw; m.depthWrite = m.userData.g3dDw; }
+    for (const o of objsB7()) for (const m of [].concat(o.material || [])) if (m.userData.g3dCw !== undefined) { m.colorWrite = m.userData.g3dCw; m.depthWrite = m.userData.g3dDw; m.polygonOffset = false; }
     if (entB7.grupo) entB7.grupo.visible = !!entB7.carregado;
     chao.visible = rua.visible = !entB7.carregado;
     renderer.shadowMap.needsUpdate = true;
@@ -642,6 +645,7 @@ export function criarCena({ container, predio, unidades, teste = false,
       // one pass with normal depth (Google's mesh of our building is clipped): our tower + Google's city, where Google's
       // buildings in front of the tower are ghosted (dropped inside the tower's screen box)
       if (!mapaPrediosFeito && entB7.carregado && entB7.grupo) { mapaPrediosFeito = true; montaMapaPredios(); }
+      if (!terrenoFeito && entB7.grupo) entB7.grupo.traverse((o) => { const u = !terrenoFeito && o.material && o.material.uniforms; if (u && u.uRua && u.uRua.value && u.uRuaOn && u.uRuaOn.value > 0.5) { terrenoFeito = true; gCena.terreno(u.uRua.value, u.uRuaExt.value); } });
       gCena.fantasma(camera.position, ALVO_FANT);
       if (!matSombraG.__recorte) { matSombraG.__recorte = true; gCena.aplicarRecorte(matSombraG); }
       const fundo = scene.background, ac = renderer.autoClear;

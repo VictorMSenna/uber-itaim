@@ -85,18 +85,24 @@ const LUZ_GLSL = `
 // The building of a Google fragment = the footprint texel under it (5 taps, 2.5 m apart: Google's walls a bit outside our
 // footprints still go with their building). Ground + lower 5 m always stay (street slope).
 const FANT_GLSL = `
-uniform sampler2D uMapaP; uniform vec4 uMapaR; uniform vec3 uCamB5; uniform vec3 uAlvoB5;
+uniform sampler2D uMapaP; uniform vec4 uMapaR; uniform vec3 uCamB5; uniform vec3 uAlvoB5; uniform sampler2D uTerr; uniform float uTerrExt;
 bool g3dSome(vec4 c) {
   if (c.a < 0.5) return false;
   vec2 a = uCamB5.xz, b = uAlvoB5.xz, ab = b - a;
   float t = clamp(dot(c.xy - a, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0);
   float d = length(c.xy - (a + ab * t));
-  bool entre = t > 0.0 && t < 0.97 && d < c.z + 22.0 * 0.35 && length(c.xy - b) > 18.0;
-  bool naCamera = length(c.xy - a) < c.z + 4.0;
+  // only buildings that really stand on the line of sight to the tower (Victor 07/10: they vanished too early). c.z = the
+  // building's radius; the tower is ~12 m wide
+  bool entre = t > 0.05 && t < 0.93 && d < c.z * 0.8 + 6.0 && length(c.xy - b) > 20.0;
+  bool naCamera = length(c.xy - a) < c.z * 0.8 + 2.0;
   return entre || naCamera;
 }
 bool g3dFantasma(vec3 p) {
-  if (uMapaR.w < 0.5 || p.y < 5.0) return false; // ground + street slope (white holes at 2.5 m)
+  if (uMapaR.w < 0.5) return false;
+  // keep the ground: 1.2 m above the real terrain (our city's street map), or 5 m where there is no terrain data
+  float chao = 3.8;
+  if (uTerrExt > 0.0) { vec2 rq = (p.xz + uTerrExt) / (2.0 * uTerrExt); if (all(greaterThan(rq, vec2(0.0))) && all(lessThan(rq, vec2(1.0)))) chao = texture2D(uTerr, rq).b * 60.0 - 20.0; }
+  if (p.y < chao + 1.2) return false;
   vec2 uv = vec2((p.x - uMapaR.x) * uMapaR.z, 1.0 - (p.z - uMapaR.y) * uMapaR.z), e = vec2(2.5 * uMapaR.z, 0.0); // map camera up = -z: v 0 at z max
   if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return false;
   return g3dSome(texture2D(uMapaP, uv)) || g3dSome(texture2D(uMapaP, uv + e.xy)) || g3dSome(texture2D(uMapaP, uv - e.xy))
@@ -167,12 +173,14 @@ export function iniciarGoogle() {
       s.recorte = { liga: { value: 0 }, min: { value: new THREE.Vector3() }, max: { value: new THREE.Vector3() }, paraB5: { value: new THREE.Matrix4() }, ecefParaB5: null,
         ret: { value: new THREE.Vector4(1, 1, 0, 0) }, prof: { value: 0 },
         luz: { value: new THREE.Vector3(1, 1, 1) }, noite: { value: 0 }, frac: { value: 0.25 },
-        mapa: { value: null }, mapaR: { value: new THREE.Vector4(0, 0, 0, 0) }, camB5: { value: new THREE.Vector3() }, alvoB5: { value: new THREE.Vector3() } };
+        mapa: { value: null }, mapaR: { value: new THREE.Vector4(0, 0, 0, 0) }, camB5: { value: new THREE.Vector3() }, alvoB5: { value: new THREE.Vector3() },
+        terr: { value: null }, terrExt: { value: 0 } };
       const shaderRecorte = (sh) => {
         sh.uniforms.uRecLiga = s.recorte.liga; sh.uniforms.uRecMin = s.recorte.min; sh.uniforms.uRecMax = s.recorte.max; sh.uniforms.uParaB5 = s.recorte.paraB5;
         sh.uniforms.uRet = s.recorte.ret; sh.uniforms.uProf = s.recorte.prof;
         sh.uniforms.uLuz = s.recorte.luz; sh.uniforms.uNoiteG = s.recorte.noite; sh.uniforms.uFracG = s.recorte.frac;
         sh.uniforms.uMapaP = s.recorte.mapa; sh.uniforms.uMapaR = s.recorte.mapaR; sh.uniforms.uCamB5 = s.recorte.camB5; sh.uniforms.uAlvoB5 = s.recorte.alvoB5;
+        sh.uniforms.uTerr = s.recorte.terr; sh.uniforms.uTerrExt = s.recorte.terrExt;
         sh.vertexShader = 'uniform mat4 uParaB5;\nvarying vec3 vB5;\nvarying float vProf;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvB5 = (uParaB5 * modelMatrix * vec4(transformed, 1.0)).xyz;\nvProf = -mvPosition.z;');
         sh.fragmentShader = 'uniform float uRecLiga;\nuniform vec3 uRecMin;\nuniform vec3 uRecMax;\nuniform vec4 uRet;\nuniform float uProf;\nvarying vec3 vB5;\nvarying float vProf;\n'
           + 'uniform vec3 uLuz;\nuniform float uNoiteG;\nuniform float uFracG;\nfloat g3dH21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }\n'
@@ -336,7 +344,7 @@ export class VistaGoogle {
     }
     // our render's city (inside the panorama) stays in the window until Google's view is COMPLETE (Victor 07/10: no melted
     // blobs on screen); then Google fades in and stays for this point, even if a new area starts loading
-    if (!this.pronto && pend === 0 && st.visible > 0) { this.pronto = true; this.tPronto = performance.now(); }
+    if (!this.pronto && st.visible > 0 && (pend === 0 || (this._lote && this._lote.p >= 0.85) || this.s.tiles.lruCache.isFull())) { this.pronto = true; this.tPronto = performance.now(); }
     if (pend === 0) {
       // done: fill the bar, then hide it a moment later (the page may not render again, so a timer does it)
       if (this._lote && !this._some) { barra.style.width = '100%'; this._some = setTimeout(() => { el.hidden = true; this._lote = null; this._some = 0; }, 900); }
@@ -493,7 +501,9 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
           if (lote0 == null) lote0 = st.loaded;
           const feitos = st.loaded - lote0; pMax = Math.max(pMax, pend > 0 ? feitos / (feitos + pend) : 0);
           carga.querySelector('b').style.width = Math.round(4 + 96 * pMax) + '%';
-          if (pend === 0 && st.visible > 8) { mostrando = true; carga.remove(); cred.hidden = !!api.noite; }
+          // Google replaces our city when its view is 85% there, complete, or when this device's memory budget is full
+          // (on mid phones the budget fills before 'complete': it never switched - Victor 07/10 21h50)
+          if (st.visible > 8 && (pend === 0 || pMax >= 0.85 || tiles.lruCache.isFull())) { mostrando = true; carga.remove(); cred.hidden = !!api.noite; }
         }
         if (pendente()) bombear();
         api.perf.n++; api.perf.ms += performance.now() - t0;
@@ -527,6 +537,7 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
     },
     pararPreCarga() { if (api.camPre && tiles.cameras.includes(api.camPre)) tiles.deleteCamera(api.camPre); api.preCarga = null; },
     // building ghosts (like our city): footprint map of our city's buildings + camera and tower positions (B5 = this frame)
+    terreno(tex, ext) { s.recorte.terr.value = tex; s.recorte.terrExt.value = ext; },
     mapaPredios(tex, minX, minZ, tam) { s.recorte.mapa.value = tex; s.recorte.mapaR.value.set(minX, minZ, 1 / tam, 0); },
     fantasma(cam, alvo) { if (!s.recorte.mapa.value) return; s.recorte.mapaR.value.w = cam ? 1 : 0; if (cam) { s.recorte.camB5.value.copy(cam); s.recorte.alvoB5.value.copy(alvo); } },
     // the shadow-overlay material drops the same fragments (no shadow painted on clipped / ghosted Google surfaces)
