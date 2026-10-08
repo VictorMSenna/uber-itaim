@@ -31,10 +31,10 @@ const RAIO = (typeof location !== 'undefined' && +new URLSearchParams(location.s
 const QS_FOTO = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('gfoto') : null;
 export const MODO_FOTO = QS_FOTO === '1' || (QS_FOTO !== '0' && (capacidade().movel || capacidade().nivel !== 'topo')); // every phone (Victor 08/10); computers stay live
 const ERRO_FOTO = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gferr')) || 6; // finest Google detail for the picture, every device (it is shot once); ?gferr= tests
-const FOTO_LADO = 2048; // px per cube face (90 deg): sharper than any phone screen
+const FOTO_LADO = capacidade().nivel === 'topo' ? 2048 : 1536; // px per 90 deg face (mid phones 1536: M21s crashed with 2048 + 3072 layers)
 const FOTO_LADO_W = capacidade().nivel === 'topo' ? 2048 : 1024; // night-windows picture (lit dots only)
 const FOTO_MIN = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfmin')) || 99999; // smallest region the splitter goes down to (?gfmin=128 tests)
-const FOTO_MB = (+(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfmb')) || (capacidade().nivel === 'topo' ? (capacidade().movel ? 900 : 1500) : 420)) * 1048576;
+const FOTO_MB = (+(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfmb')) || (capacidade().nivel === 'topo' ? (capacidade().movel ? 900 : 1500) : capacidade().tilesMB)) * 1048576; // mid phones: no raise (M21s crashed at 420, 08/10)
 const FOTO_N = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gfn')) || 4; // regions per face side
 export const desligadoPorUrl = () => /[?&]google3d=0/.test(location.search);
 async function chaveDaPagina() {
@@ -380,6 +380,8 @@ export class VistaGoogle {
       F.alvos = F.faces.map(() => ({ A: alvo(FOTO_LADO), W: alvo(FOTO_LADO_W) }));
       F.mats = F.faces.map((f) => new THREE.Matrix4().multiplyMatrices(F.cams[f].projectionMatrix, F.cams[f].matrixWorldInverse));
       F.limpos = new Set();
+      try { localStorage.setItem('tabela3d-foto-ativa', String(Date.now())); } catch (e) { /* private mode */ } // crash guard (capacidade.js)
+      if (!window.__g3dSaida) { window.__g3dSaida = true; addEventListener('pagehide', () => { try { localStorage.removeItem('tabela3d-foto-ativa'); } catch (e) { /* ignore */ } }); } // closing the page is not a crash
       this.pronto = false; this.restauraCache();
       { const c = this.s.tiles.lruCache; this._guardaCache(); c.minBytesSize = 0; c.unloadPercent = 1; c.maxBytesSize = Math.max(c.maxBytesSize, FOTO_MB); } // shooting: bigger budget, shot regions dropped at once
     }
@@ -427,7 +429,7 @@ export class VistaGoogle {
       { const c = t.lruCache, mx = c.maxBytesSize; for (const k of [...t.cameras]) t.deleteCamera(k); c.maxBytesSize = 1; t.update(); c.maxBytesSize = mx; }
       F.fila.shift(); F.feitosF += w * w; F.reg++; F.t0 = agora;
       if (!F.fila.length) { F.fila = null; F.reg = 0; F.i++; }
-      if (F.i >= F.faces.length) { F.feito = true; cam.clearViewOffset(); if (!this.pronto) { this.pronto = true; this.tPronto = agora; } STATUS.tiles = st.visible || 0; if (capacidade().nivel === 'topo') this.restauraCache(); else this.soltaCache(); }
+      if (F.i >= F.faces.length) { F.feito = true; cam.clearViewOffset(); if (!this.pronto) { this.pronto = true; this.tPronto = agora; } STATUS.tiles = st.visible || 0; if (capacidade().nivel === 'topo') this.restauraCache(); else this.soltaCache(); try { localStorage.removeItem('tabela3d-foto-ativa'); } catch (e) { /* ignore */ } }
     }
     this.acordar();
   }

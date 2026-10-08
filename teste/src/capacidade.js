@@ -18,6 +18,9 @@ export function rebaixar() {
 }
 export function capacidade() {
   if (cache) return cache;
+  // crash guard (08/10): the page died while the window photo was being shot (renderer out of memory, 'Ah, nao!') ->
+  // this device steps one level down now (the mark is removed when a shot completes)
+  let caiu = false; try { const t = +localStorage.getItem('tabela3d-foto-ativa'); if (t && Date.now() - t < 3 * 3600e3) caiu = true; localStorage.removeItem('tabela3d-foto-ativa'); } catch (e) { /* private mode */ }
   const q = new URLSearchParams(location.search).get('nivel');
   const movel = /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent);
   const ios = /iPhone|iPad/i.test(navigator.userAgent);
@@ -51,6 +54,7 @@ export function capacidade() {
   }[nivel];
   const pw = +new URLSearchParams(location.search).get('pano'); if (pw) T.larguraPano = pw; // tests
   cache = { nivel, movel, mem, gpu, maxTex, ...T, rebaixar };
+  if (caiu) { if (typeof window !== 'undefined') window.__capacidade = cache; rebaixar(); cache = null; return capacidade(); }
   if (typeof window !== 'undefined') window.__capacidade = cache;
   return cache;
 }
