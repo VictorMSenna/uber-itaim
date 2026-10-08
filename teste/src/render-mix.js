@@ -340,8 +340,14 @@ export class MisturaPonto {
       const eFora = yF > 0 ? Math.min(U.expo.value, alvoFora / yF) : U.expo.value;
       U.fatorFora.value = 1 + (eFora / U.expo.value - 1) * kDia;
     }
+    // 08/10 (Victor's M21s: colour rings / bands at night): phone GPUs compute in reduced precision and the lamp layers
+    // enter as tiny numbers (abajur escala 0.004 x pow(v, 2.2) < 1e-4) that round in steps. The exposure is folded into
+    // each layer's scale BEFORE the sum, so every term is near 1 in the shader (same image, no underflow).
+    const K = U.expo.value;
+    for (let i = 0; i < 7; i++) U.esc.value[i] *= K;
+    U.gDir.value.multiplyScalar(K); U.expo.value = 1;
     this.r.setRenderTarget(this.rt); this.r.render(this.cena, this.cam); this.r.setRenderTarget(null);
-    this.ultimo = { ...pl, expo: U.expo.value };
+    this.ultimo = { ...pl, expo: K };
     return this.rt.texture;
   }
   liberar() { this.rt.dispose(); this.mat.dispose(); for (const p of this.cache.values()) p.then((t) => t && t.dispose()); }

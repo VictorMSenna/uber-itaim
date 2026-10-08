@@ -435,7 +435,7 @@ export class VistaGoogle {
       r.setRenderTarget(ant); r.setClearColor(cc, ca);
       this.atualizaCredito();
       // flush: every tile of the region just shot leaves memory now (the LRU kept them: the budget filled region after region)
-      { const c = t.lruCache, mx = c.maxBytesSize; for (const k of [...t.cameras]) t.deleteCamera(k); c.maxBytesSize = 1; t.update(); c.maxBytesSize = mx; }
+      { const c = t.lruCache, mx = c.maxBytesSize; if (c.cachedBytes > mx * 0.7) { for (const k of [...t.cameras]) t.deleteCamera(k); c.maxBytesSize = 1; t.update(); c.maxBytesSize = mx; } } // flush only when nearly full (08/10: on 4G the full flush re-downloaded shared tiles every region)
       F.fila.shift(); F.feitosF += w * w; F.reg++; F.t0 = agora;
       if (!F.fila.length) { F.fila = null; F.reg = 0; F.i++; }
       if (F.i >= F.faces.length) { F.feito = true; cam.clearViewOffset(); if (!this.pronto) { this.pronto = true; this.tPronto = agora; } STATUS.tiles = st.visible || 0; if (capacidade().nivel === 'topo') this.restauraCache(); else this.soltaCache(); try { localStorage.removeItem('tabela3d-foto-ativa'); } catch (e) { /* ignore */ } }
