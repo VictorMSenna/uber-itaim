@@ -550,7 +550,7 @@ export function criarEntorno({ cena, renderer, modo = 'interior', T = null, hPis
   const s = grande ? 4096 : 2048;
   const mats = [];
   const estado = { el: 30, t: 720, az: 0, est: 'primavera', pronto: false };
-  const api = { grupo, nota: NOTA_ENTORNO, atribuicao: ATRIBUICAO_ENTORNO, resolucao: s, atualizarHora, atualizarSol, atualizarCamera, dispose, stats: {} };
+  const api = { arvores: () => arvoresMalha, grupo, nota: NOTA_ENTORNO, atribuicao: ATRIBUICAO_ENTORNO, resolucao: s, atualizarHora, atualizarSol, atualizarCamera, dispose, stats: {} };
   api.estado = 'carregando';
   marcar(modo, 'carregando', `textura ${s}`);
   async function tentar(res, ms) {

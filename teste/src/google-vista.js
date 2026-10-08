@@ -81,6 +81,28 @@ const LUZ_GLSL = `
       }
     }
   }`;
+// building ghosts: same rule as entorno.js (whole building between camera and tower, or around the camera, is not drawn).
+// The building of a Google fragment = the footprint texel under it (5 taps, 2.5 m apart: Google's walls a bit outside our
+// footprints still go with their building). Ground + lower 5 m always stay (street slope).
+const FANT_GLSL = `
+uniform sampler2D uMapaP; uniform vec4 uMapaR; uniform vec3 uCamB5; uniform vec3 uAlvoB5;
+bool g3dSome(vec4 c) {
+  if (c.a < 0.5) return false;
+  vec2 a = uCamB5.xz, b = uAlvoB5.xz, ab = b - a;
+  float t = clamp(dot(c.xy - a, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0);
+  float d = length(c.xy - (a + ab * t));
+  bool entre = t > 0.0 && t < 0.97 && d < c.z + 22.0 * 0.35 && length(c.xy - b) > 18.0;
+  bool naCamera = length(c.xy - a) < c.z + 4.0;
+  return entre || naCamera;
+}
+bool g3dFantasma(vec3 p) {
+  if (uMapaR.w < 0.5 || p.y < 5.0) return false; // ground + street slope (white holes at 2.5 m)
+  vec2 uv = vec2((p.x - uMapaR.x) * uMapaR.z, 1.0 - (p.z - uMapaR.y) * uMapaR.z), e = vec2(2.5 * uMapaR.z, 0.0); // map camera up = -z: v 0 at z max
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return false;
+  return g3dSome(texture2D(uMapaP, uv)) || g3dSome(texture2D(uMapaP, uv + e.xy)) || g3dSome(texture2D(uMapaP, uv - e.xy))
+      || g3dSome(texture2D(uMapaP, uv + e.yx)) || g3dSome(texture2D(uMapaP, uv - e.yx));
+}
+`;
 // same curve as our city (entorno.js gradeEntorno): base grade by sun elevation + window lights at night
 function luzDaCidade(el) {
   const e = Number.isFinite(el) ? el : -20;
@@ -124,7 +146,7 @@ export function iniciarGoogle() {
       // camera (a forgotten camera keeps loading tiles for a view nobody sees) and its detail target.
       s.tomar = (quem, pai, matriz, cam, erro) => {
         if (s.dono !== quem) {
-          s._recFeito = false; if (s.recorte) s.recorte.ret.value.set(1, 1, 0, 0); // ghost box only in the outside view
+          s._recFeito = false; if (s.recorte) s.recorte.mapaR.value.w = 0; // building ghosts only in the outside view (cena3d turns them on)
           for (const c of [...tiles.cameras]) tiles.deleteCamera(c);
           tiles.setCamera(cam);
           const g = tiles.group; if (g.parent !== pai) { g.parent?.remove(g); pai.add(g); }
@@ -144,16 +166,19 @@ export function iniciarGoogle() {
       // fragments inside the rectangle and nearer than the tower are dropped (x0 > x1 = off, e.g. in the 360)
       s.recorte = { liga: { value: 0 }, min: { value: new THREE.Vector3() }, max: { value: new THREE.Vector3() }, paraB5: { value: new THREE.Matrix4() }, ecefParaB5: null,
         ret: { value: new THREE.Vector4(1, 1, 0, 0) }, prof: { value: 0 },
-        luz: { value: new THREE.Vector3(1, 1, 1) }, noite: { value: 0 }, frac: { value: 0.25 } };
+        luz: { value: new THREE.Vector3(1, 1, 1) }, noite: { value: 0 }, frac: { value: 0.25 },
+        mapa: { value: null }, mapaR: { value: new THREE.Vector4(0, 0, 0, 0) }, camB5: { value: new THREE.Vector3() }, alvoB5: { value: new THREE.Vector3() } };
       const shaderRecorte = (sh) => {
         sh.uniforms.uRecLiga = s.recorte.liga; sh.uniforms.uRecMin = s.recorte.min; sh.uniforms.uRecMax = s.recorte.max; sh.uniforms.uParaB5 = s.recorte.paraB5;
         sh.uniforms.uRet = s.recorte.ret; sh.uniforms.uProf = s.recorte.prof;
         sh.uniforms.uLuz = s.recorte.luz; sh.uniforms.uNoiteG = s.recorte.noite; sh.uniforms.uFracG = s.recorte.frac;
+        sh.uniforms.uMapaP = s.recorte.mapa; sh.uniforms.uMapaR = s.recorte.mapaR; sh.uniforms.uCamB5 = s.recorte.camB5; sh.uniforms.uAlvoB5 = s.recorte.alvoB5;
         sh.vertexShader = 'uniform mat4 uParaB5;\nvarying vec3 vB5;\nvarying float vProf;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvB5 = (uParaB5 * modelMatrix * vec4(transformed, 1.0)).xyz;\nvProf = -mvPosition.z;');
         sh.fragmentShader = 'uniform float uRecLiga;\nuniform vec3 uRecMin;\nuniform vec3 uRecMax;\nuniform vec4 uRet;\nuniform float uProf;\nvarying vec3 vB5;\nvarying float vProf;\n'
           + 'uniform vec3 uLuz;\nuniform float uNoiteG;\nuniform float uFracG;\nfloat g3dH21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }\n'
+          + FANT_GLSL
           + sh.fragmentShader.replace('#include <opaque_fragment>', LUZ_GLSL + '\n#include <opaque_fragment>').replace('void main() {',
-          'void main() {\n  if (uRecLiga > 0.5 && all(greaterThan(vB5, uRecMin)) && all(lessThan(vB5, uRecMax))) discard;\n  if (gl_FragCoord.x > uRet.x && gl_FragCoord.x < uRet.z && gl_FragCoord.y > uRet.y && gl_FragCoord.y < uRet.w && vProf < uProf) discard;');
+          'void main() {\n  if (uRecLiga > 0.5 && all(greaterThan(vB5, uRecMin)) && all(lessThan(vB5, uRecMax))) discard;\n  if (g3dFantasma(vB5)) discard;');
       };
       s.shaderRecorte = shaderRecorte;
       const recortar = (o) => {
@@ -501,8 +526,9 @@ export async function ligarGoogleCena({ scene, camera, renderer, ref, aoMudar, e
       api.preCarga = { andar, final }; bombear();
     },
     pararPreCarga() { if (api.camPre && tiles.cameras.includes(api.camPre)) tiles.deleteCamera(api.camPre); api.preCarga = null; },
-    // ghost box of our tower on screen (drawing-buffer px, y up) and its nearest view depth; null = off
-    fantasma(ret, prof) { if (ret) { s.recorte.ret.value.set(ret[0], ret[1], ret[2], ret[3]); s.recorte.prof.value = prof; } else s.recorte.ret.value.set(1, 1, 0, 0); },
+    // building ghosts (like our city): footprint map of our city's buildings + camera and tower positions (B5 = this frame)
+    mapaPredios(tex, minX, minZ, tam) { s.recorte.mapa.value = tex; s.recorte.mapaR.value.set(minX, minZ, 1 / tam, 0); },
+    fantasma(cam, alvo) { if (!s.recorte.mapa.value) return; s.recorte.mapaR.value.w = cam ? 1 : 0; if (cam) { s.recorte.camB5.value.copy(cam); s.recorte.alvoB5.value.copy(alvo); } },
     // the shadow-overlay material drops the same fragments (no shadow painted on clipped / ghosted Google surfaces)
     aplicarRecorte(material) { material.onBeforeCompile = s.shaderRecorte; material.customProgramCacheKey = () => 'g3d-recorte-sombra'; material.needsUpdate = true; },
     // (kept for the API; Google now stays on at night with its own night light)
