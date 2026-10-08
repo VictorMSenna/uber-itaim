@@ -7,6 +7,7 @@
 // Same API words as src/interior.js (B4): definirHora(minutos) · definirEstacao(estacao) · definirLuz(nome, ligada).
 import * as THREE from 'three';
 import { solNoInstante } from './interior-sol.js';
+import { capacidade } from './capacidade.js';
 
 // only fixtures seen in the clips (dados/b6-inventario.json > luzes); the curtain LED was removed (not confirmed)
 export const LUZES = ['teto', 'abajur', 'cozinha'];
@@ -36,6 +37,21 @@ uniform sampler2D t[7];
 uniform vec3 g[7];
 uniform float esc[7];
 uniform float gama;
+// 08/10 (Victor: odd blue cast around the abajur): lamp layers clipped their brightest 1% at the top code (red stopped,
+// green/blue went on -> white -> blue after the warm night balance). Layers with a 'joelho' (knee) keep the old
+// encoding below it and store the highlights above it logarithmically up to ymax x escala. joelho 0 = old encoding.
+uniform float joelho[7];
+uniform float joelho2[7];
+uniform float y2[7];
+uniform float ymax[7];
+// lit walls between joelho and joelho2 (log up to y2), the lamps themselves above joelho2 (log from y2 up to ymax)
+vec3 decod(vec3 v, float kn, float kn2, float yb, float ym){
+  if (kn <= 0.0) return pow(v, vec3(gama));
+  vec3 baixo = pow(min(v / kn, 1.0), vec3(gama));
+  vec3 meio = exp(clamp(v - kn, 0.0, kn2 - kn) / (kn2 - kn) * log(yb));
+  vec3 alto = yb * exp(max(v - kn2, 0.0) / (1.0 - kn2) * log(ym / yb));
+  return mix(mix(baixo, meio, step(kn, v)), alto, step(kn2, v));
+}
 uniform vec3 wb;
 uniform float expo;
 uniform sampler2D tFora;
@@ -69,9 +85,22 @@ float acesa(vec2 uv){
   if (nInt > 3.5) v += acesaT(tVis2, vec2(uv.x, uv.y * 0.5));
   return min(v, 1.0);
 }
+uniform float raioVis;
+uniform float pesoN;
+// partial sun (rug fibres, fabric, sheer curtain, penumbra) is stored as a dither of lit / unlit texels: average the
+// neighbours of the SAME surface (normal agreement) so it shows as the partial light it is, not as grain
 float visSol(vec2 uv){
-  vec2 p = uv * visTam - 0.5; vec2 f = fract(p); vec2 d = 1.0 / visTam; vec2 b0 = (floor(p) + 0.5) * d;
-  return mix(mix(acesa(b0), acesa(b0 + vec2(d.x, 0.0)), f.x), mix(acesa(b0 + vec2(0.0, d.y)), acesa(b0 + d), f.x), f.y);
+  vec2 d = 1.0 / visTam; vec2 c0 = (floor(uv * visTam) + 0.5) * d;
+  vec3 n0 = texture2D(tNor, uv).rgb * 2.0 - 1.0;
+  float s = 0.0, w = 0.0;
+  for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
+    if (float(i * i) > raioVis * raioVis || float(j * j) > raioVis * raioVis) continue;
+    vec2 q = c0 + vec2(float(i), float(j)) * d;
+    vec3 n = texture2D(tNor, q).rgb * 2.0 - 1.0;
+    float wq = mix(1.0, smoothstep(0.35, 0.8, dot(n, n0)), pesoN) * exp(-0.25 * float(i * i + j * j)); // fabric/rug bump normals still count as the same surface
+    s += acesa(q) * wq; w += wq;
+  }
+  return w > 1e-4 ? s / w : acesa(c0);
 }
 vec3 neutral(vec3 c){
   const float start = 0.76; const float desat = 0.15;
@@ -88,7 +117,7 @@ vec3 neutral(vec3 c){
 }
 void main(){
   vec3 s = vec3(0.0);
-  ${[0, 1, 2, 3, 4, 5, 6].map((i) => `if (g[${i}].r + g[${i}].g + g[${i}].b > 0.0) s += g[${i}] * esc[${i}] * pow(texture2D(t[${i}], vUv).rgb, vec3(gama));`).join('\n  ')}
+  ${[0, 1, 2, 3, 4, 5, 6].map((i) => `if (g[${i}].r + g[${i}].g + g[${i}].b > 0.0) s += g[${i}] * esc[${i}] * decod(texture2D(t[${i}], vUv).rgb, joelho[${i}], joelho2[${i}], y2[${i}], ymax[${i}]);`).join('\n  ')}
   if (usaVis > 0.5) {
     vec3 alb = pow(texture2D(tAlb, vUv).rgb, vec3(2.2));
     vec3 n = normalize(texture2D(tNor, vUv).rgb * 2.0 - 1.0);
@@ -174,10 +203,10 @@ export class MisturaPonto {
     this.mat = new THREE.ShaderMaterial({
       vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false,
       uniforms: { t: { value: Array(7).fill(PRETO) }, g: { value: Array.from({ length: 7 }, () => new THREE.Vector3()) },
-        esc: { value: Array(7).fill(1) }, gama: { value: 2.2 }, wb: { value: new THREE.Vector3(1, 1, 1) }, expo: { value: 1 }, srgb: { value: half ? 0 : 1 },
+        esc: { value: Array(7).fill(1) }, gama: { value: 2.2 }, joelho: { value: Array(7).fill(0) }, joelho2: { value: Array(7).fill(0.95) }, y2: { value: Array(7).fill(2) }, ymax: { value: Array(7).fill(4) }, wb: { value: new THREE.Vector3(1, 1, 1) }, expo: { value: 1 }, srgb: { value: half ? 0 : 1 },
         tFora: { value: PRETO }, usaFora: { value: 0 }, fatorFora: { value: 1 },
         tAlb: { value: PRETO }, tNor: { value: PRETO }, tVis: { value: PRETO }, tVis2: { value: PRETO }, nInt: { value: 0 }, usaVis: { value: 0 }, gDir: { value: new THREE.Vector3() },
-        solDir: { value: new THREE.Vector3(0, 0, 1) }, meioMin: { value: 0 }, visTam: { value: new THREE.Vector2(1, 1) } },
+        solDir: { value: new THREE.Vector3(0, 0, 1) }, meioMin: { value: 0 }, visTam: { value: new THREE.Vector2(1, 1) }, raioVis: { value: Number.isFinite(parseFloat(new URLSearchParams(location.search).get('visr'))) ? parseFloat(new URLSearchParams(location.search).get('visr')) : (capacidade().nivel === 'topo' ? 2 : 1) }, pesoN: { value: new URLSearchParams(location.search).get('visn') === '0' ? 0 : 1 } }, // ?visr=0 = old look, ?visn=0 = no normal weight (tests)
     });
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mat);
     this.cena = new THREE.Scene(); this.cena.add(this.quad);
@@ -267,6 +296,7 @@ export class MisturaPonto {
       U.t.value[i] = (it && tx[i]) || PRETO;
       U.g.value[i].set(...(it ? it.g : [0, 0, 0]));
       U.esc.value[i] = it ? it.c.escala : 1;
+      U.joelho.value[i] = (it && it.c.joelho) || 0; U.joelho2.value[i] = (it && it.c.joelho2) || 0.95; U.y2.value[i] = (it && it.c.y2) || 2; U.ymax.value[i] = (it && it.c.ymax) || 4;
     }
     // partial grey-world white balance + exposure from the analytic mean (sum of layer means x gains)
     const lum = (v) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];

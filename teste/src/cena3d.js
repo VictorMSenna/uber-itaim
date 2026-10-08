@@ -566,10 +566,15 @@ export function criarCena({ container, predio, unidades, teste = false,
   // shadow-only: three.js picks shadow casters with the MAIN camera's layers, so a separate layer cast nothing (07/10: only
   // our tower and the trees had shadows). Our city stays in the scene but writes no colour/depth: invisible, still casting.
   function objsB7() { const l = []; if (entB7.grupo) entB7.grupo.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine) l.push(o); }); const a = entB7.arvores && entB7.arvores(); if (a) l.push(a); return l; }
+  // 08/10 (Victor: floating roofs over Google): the far city / ring of our city arrive AFTER Google may already show; the
+  // marking ran once, so those late meshes stayed on screen (dark walls, orthophoto roofs in the air). Re-run on any new mesh.
+  let b7Marcados = 0;
   function sombraSoB7() {
-    if (b7SoSombra || !entB7.grupo) return;
-    b7SoSombra = true; entB7.grupo.visible = true;
-    for (const o of objsB7()) { o.layers.set(0); for (const m of [].concat(o.material || [])) { if (m.userData.g3dCw === undefined) { m.userData.g3dCw = m.colorWrite; m.userData.g3dDw = m.depthWrite; }
+    if (!entB7.grupo) return;
+    const objs = objsB7();
+    if (b7SoSombra && objs.length === b7Marcados) return;
+    b7SoSombra = true; b7Marcados = objs.length; entB7.grupo.visible = true;
+    for (const o of objs) { o.layers.set(0); for (const m of [].concat(o.material || [])) { if (m.userData.g3dCw === undefined) { m.userData.g3dCw = m.colorWrite; m.userData.g3dDw = m.depthWrite; }
       // our GROUND (tipo 1, orthophoto) stays visible a bit behind Google's ground: it fills the holes left by ghosted buildings
       if (m.uniforms && m.uniforms.uTipo && m.uniforms.uTipo.value === 1) { m.polygonOffset = true; m.polygonOffsetFactor = 2; m.polygonOffsetUnits = 16; if (m.uniforms.uSoChao) m.uniforms.uSoChao.value = 1; continue; } // ground only (no floating roofs)
       m.colorWrite = false; m.depthWrite = false; } }
@@ -618,7 +623,7 @@ export function criarCena({ container, predio, unidades, teste = false,
     } catch (e) { console.warn('mapa de predios (fantasma do Google) falhou', e && e.message); }
   }
   function voltaB7() { // Google off (night / failure): our city back on screen
-    b7SoSombra = false;
+    b7SoSombra = false; b7Marcados = 0;
     for (const o of objsB7()) for (const m of [].concat(o.material || [])) if (m.userData.g3dCw !== undefined) { m.colorWrite = m.userData.g3dCw; m.depthWrite = m.userData.g3dDw; m.polygonOffset = false; if (m.uniforms && m.uniforms.uSoChao) m.uniforms.uSoChao.value = 0; }
     if (entB7.grupo) entB7.grupo.visible = !!entB7.carregado;
     chao.visible = rua.visible = !entB7.carregado;
